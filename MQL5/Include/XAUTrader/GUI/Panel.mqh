@@ -316,14 +316,10 @@ public:
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_CORNER, CORNER_LEFT_UPPER);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_XDISTANCE, m_settings.panelX);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_YDISTANCE, m_settings.panelY);
-      // Selectable so a click anywhere on the panel is captured by this
-      // object instead of falling through to the chart's own click-drag-to-
-      // pan/scroll handling (which is what was happening before — dragging
-      // the panel moved the chart, and dragging the slider scrolled it).
-      // We still do all *our* dragging manually via mouse-move tracking, so
-      // native object-drag is immediately reverted in SnapBackPosition() —
-      // see the CHARTEVENT_OBJECT_DRAG handler in the EA.
-      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTABLE, true);
+      // Not selectable — clicks/drags on the panel are kept off the chart
+      // underneath via CHART_MOUSE_SCROLL (toggled by the EA based on
+      // CPanel::ContainsPoint()), not by fighting over object selection.
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTABLE, false);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTED, false);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_HIDDEN, true);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_BACK, false);
@@ -378,20 +374,17 @@ public:
 
    void ToggleCaret() { m_caretOn = !m_caretOn; }
 
-   //--- true while the header (title bar) is being manually dragged by our
-   //--- own mouse-move tracking — see the note on OBJPROP_SELECTABLE above.
-   bool IsDraggingPanel() const { return m_dragPanel; }
-
-   //--- Undoes MT5's native object-drag, which fires the moment the now-
-   //--- selectable bitmap is clicked and moved for ANY reason (e.g. the risk
-   //--- slider) — not just an intentional header drag, which we already
-   //--- apply ourselves. Called by the EA on CHARTEVENT_OBJECT_DRAG.
-   void SnapBackPosition()
+   //--- Whether a chart point is over the panel — the EA uses this to toggle
+   //--- CHART_MOUSE_SCROLL off while the cursor is over us, which is the
+   //--- actual, official fix for clicks/drags on the panel affecting the
+   //--- chart underneath (panning/scrolling). Selectable-object tricks were
+   //--- tried first and were unreliable; this chart-level property is the
+   //--- documented mechanism and needs no per-widget hit-testing games.
+   bool ContainsPoint(const int px, const int py) const
      {
-      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_XDISTANCE, m_settings.panelX);
-      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_YDISTANCE, m_settings.panelY);
-      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTED, false);
-      ChartRedraw(m_chartId);
+      int lx = px - m_settings.panelX;
+      int ly = py - m_settings.panelY;
+      return (lx >= 0 && lx < m_rc.scaleW && ly >= 0 && ly < m_rc.scaleH);
      }
 
    //--- Rebuilds the geometry cache (call after scale/collapse changes) and repositions the bitmap.
@@ -912,12 +905,7 @@ private:
       bool leftDown = (flags & 1) == 1;
       if(!leftDown)
         {
-         if(m_dragPanel)
-           {
-            m_dragPanel = false;
-            ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTED, false);
-            return PANEL_ACTION_SETTINGS_CHANGED;
-           }
+         if(m_dragPanel) { m_dragPanel = false; return PANEL_ACTION_SETTINGS_CHANGED; }
          if(m_dragSlider) { m_dragSlider = false; return PANEL_ACTION_REDRAW_LINES; }
          return PANEL_ACTION_NONE;
         }

@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Amirreza Haddadi"
 #property link      "https://github.com/AmirHaddadi/XAU-Trader"
-#property version   "1.00"
+#property version   "1.10"
 #property description "Real-time position sizing & money-management panel — draw your entry/SL/TP, choose market/limit/stop, and XAU Trader computes broker-valid lots from a %balance, %equity or fixed-$ risk budget."
 #property strict
 
@@ -94,6 +94,7 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    EventKillTimer();
+   ChartSetInteger(0, CHART_MOUSE_SCROLL, true); // never leave chart panning stuck off
    CSettingsStore::Save(g_panel.GetSettings());
    g_lines.Clear();
    g_panel.Destroy();
@@ -217,21 +218,18 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          return;
         }
 
-      // The panel bitmap is selectable (needed so a click on it doesn't
-      // fall through to the chart's own click-drag-to-pan/scroll), which
-      // means MT5 will also try to natively drag it on ANY click-drag
-      // inside it — including e.g. the risk slider, which isn't supposed
-      // to move the panel at all. We do all our own dragging manually via
-      // mouse-move tracking, so any native drag that isn't our own
-      // in-progress header drag gets reverted immediately.
-      if(sparam == XAUT_PANEL_OBJ)
-        {
-         if(!g_panel.IsDraggingPanel())
-            g_panel.SnapBackPosition();
-         return;
-        }
       return;
      }
+
+   // The chart's own click-drag-to-pan/scroll and our panel's manual
+   // dragging (header, slider, fields...) both listen to raw mouse
+   // coordinates, so anything on the panel was also panning/scrolling the
+   // chart underneath. CHART_MOUSE_SCROLL is MT5's own documented switch
+   // for exactly this — off while the cursor is over the panel, on
+   // everywhere else (including over the chart-native Entry/SL/TP and
+   // position lines, which drag independently of this setting).
+   if(id == CHARTEVENT_MOUSE_MOVE)
+      ChartSetInteger(0, CHART_MOUSE_SCROLL, !g_panel.ContainsPoint((int)lparam, (int)dparam));
 
    if(id == CHARTEVENT_CHART_CHANGE)
      {
