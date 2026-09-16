@@ -1,0 +1,16 @@
+# Compiled MQL5 binaries — build artifacts, not source
+*.ex5
+*.ex4
+
+# MetaEditor/MetaTrader compile & runtime logs
+*.log
+MQL5/Experts/**/*.log
+MQL5/Logs/
+
+# Per-user runtime state written by the EA at runtime (not source)
+MQL5/Files/XAUTrader/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
