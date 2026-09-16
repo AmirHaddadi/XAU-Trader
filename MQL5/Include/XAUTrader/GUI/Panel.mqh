@@ -119,15 +119,22 @@ private:
       m_canvas.Rectangle(r.x, r.y, r.x + r.w - 1, r.y + r.h - 1, ColorToARGB(clr, alpha));
      }
 
+   // If the embedded custom font ever fails to resolve by name, fall back to a
+   // guaranteed system font rather than silently drawing nothing (which is
+   // exactly the failure mode that shipped once already).
    void Text(const int x, const int y, const string s, const color clr, const uint align, const bool bold = false)
      {
-      m_canvas.FontSet(bold ? "MiSans" : "MiSans", (int)MathRound(-11 * m_settings.uiScale), FW_NORMAL);
+      int size = (int)MathRound(-11 * m_settings.uiScale);
+      if(!m_canvas.FontSet("MiSans", size, FW_NORMAL))
+         m_canvas.FontSet("Arial", size, FW_NORMAL);
       m_canvas.TextOut(x, y, s, ColorToARGB(clr, 255), align);
      }
 
    void TextFa(const int x, const int y, const string s, const color clr, const uint align)
      {
-      m_canvas.FontSet("Vazir", (int)MathRound(-12 * m_settings.uiScale), FW_NORMAL);
+      int size = (int)MathRound(-12 * m_settings.uiScale);
+      if(!m_canvas.FontSet("Vazir", size, FW_NORMAL))
+         m_canvas.FontSet("Tahoma", size, FW_NORMAL);
       m_canvas.TextOut(x, y, s, ColorToARGB(clr, 255), align);
      }
 
@@ -197,8 +204,11 @@ public:
       m_settings = settings;
       m_rc = SPanelRects::Build(m_settings.uiScale, m_settings.collapsed);
 
+      // NORMALIZE (not RAW) is required for the library to correctly alpha-blend
+      // both filled shapes and anti-aliased text against the chart behind it —
+      // RAW left the panel translucent and every glyph invisible.
       if(!m_canvas.CreateBitmapLabel(m_chartId, 0, XAUT_PANEL_OBJ, m_settings.panelX, m_settings.panelY,
-                                       m_rc.scaleW, m_rc.scaleH, COLOR_FORMAT_ARGB_RAW))
+                                       m_rc.scaleW, m_rc.scaleH, COLOR_FORMAT_ARGB_NORMALIZE))
          return false;
 
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_CORNER, CORNER_LEFT_UPPER);
