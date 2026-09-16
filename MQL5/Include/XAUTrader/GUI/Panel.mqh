@@ -363,6 +363,7 @@ public:
         {
          PruneUnusedLabels();
          m_canvas.Update();
+         ChartRedraw(m_chartId);
          return;
         }
 
@@ -373,6 +374,10 @@ public:
 
       PruneUnusedLabels();
       m_canvas.Update();
+      // Object-property writes (bitmap + every label) don't repaint on their
+      // own between ticks — without this, dragging/typing looked completely
+      // frozen even though the underlying state was updating correctly.
+      ChartRedraw(m_chartId);
      }
 
 private:
@@ -719,6 +724,7 @@ private:
          ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_XDISTANCE, newX);
          ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_YDISTANCE, newY);
          RepositionAllLabels();
+         ChartRedraw(m_chartId);
          return PANEL_ACTION_NONE;
         }
 

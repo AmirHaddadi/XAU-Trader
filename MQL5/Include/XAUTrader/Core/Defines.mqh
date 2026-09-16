@@ -13,7 +13,7 @@
 
 // Panel geometry (logical pixels at scale = 1.0)
 #define XAUT_PANEL_BASE_W    272
-#define XAUT_PANEL_BASE_H    398
+#define XAUT_PANEL_BASE_H    470  // must clear the trading body's real content height (~462 at scale 1.0) or the buy/sell row clips off the bottom
 #define XAUT_PANEL_MIN_SCALE 0.75
 #define XAUT_PANEL_MAX_SCALE 1.75
 #define XAUT_HEADER_H        34
