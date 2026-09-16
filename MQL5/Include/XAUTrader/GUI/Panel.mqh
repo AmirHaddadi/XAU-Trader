@@ -61,6 +61,18 @@ private:
    datetime       m_armBuyUntil;
    datetime       m_armSellUntil;
 
+   // All panel TEXT is drawn as native OBJ_LABEL chart objects, not via
+   // CCanvas::TextOut. On this Wine install, CCanvas's off-screen GDI text
+   // rasterization silently produces nothing (confirmed: the chart-native
+   // OBJ_TEXT price captions in LevelLines render fine, while every canvas
+   // TextOut call renders blank, even after installing real fonts +
+   // vcrun2019) — native chart objects are the pathway proven to work here,
+   // so text uses that unconditionally rather than gambling on a GDI fix.
+   int            m_labelSeq;
+   int            m_labelCountPrev;
+   int            m_labelLX[64];
+   int            m_labelLY[64];
+
    //--- ---------------------------------------------------------- drawing
    void DrawIconGear(const int cx, const int cy, const int r, const color clr)
      {
@@ -119,23 +131,85 @@ private:
       m_canvas.Rectangle(r.x, r.y, r.x + r.w - 1, r.y + r.h - 1, ColorToARGB(clr, alpha));
      }
 
-   // If the embedded custom font ever fails to resolve by name, fall back to a
-   // guaranteed system font rather than silently drawing nothing (which is
-   // exactly the failure mode that shipped once already).
+   ENUM_ANCHOR_POINT AlignToAnchor(const uint align)
+     {
+      uint h = align & 3;   // 0=TA_LEFT, 1=TA_CENTER, 2=TA_RIGHT
+      uint v = align & 12;  // 0=TA_TOP,  4=TA_VCENTER, 8=TA_BOTTOM
+      if(v == 0) { if(h == 0) return ANCHOR_LEFT_UPPER; if(h == 1) return ANCHOR_UPPER; return ANCHOR_RIGHT_UPPER; }
+      if(v == 4) { if(h == 0) return ANCHOR_LEFT;       if(h == 1) return ANCHOR_CENTER; return ANCHOR_RIGHT; }
+      { if(h == 0) return ANCHOR_LEFT_LOWER; if(h == 1) return ANCHOR_LOWER; return ANCHOR_RIGHT_LOWER; }
+     }
+
+   // Renders one string as a native OBJ_LABEL positioned at panel-local (x,y),
+   // reusing/creating XAUT_TXT_<n> in sequence order each Draw() pass so the
+   // object count naturally tracks whichever sub-view is currently visible.
+   void Lbl(const int x, const int y, const string s, const color clr, const uint align, const string fontName, const int fontSize)
+     {
+      int idx = m_labelSeq;
+      m_labelSeq++;
+      if(idx >= 64) return; // panel never has anywhere near this many text nodes
+      m_labelLX[idx] = x;
+      m_labelLY[idx] = y;
+
+      string name = XAUT_OBJ_PREFIX + "TXT_" + IntegerToString(idx);
+      if(ObjectFind(m_chartId, name) < 0)
+        {
+         ObjectCreate(m_chartId, name, OBJ_LABEL, 0, 0, 0);
+         ObjectSetInteger(m_chartId, name, OBJPROP_CORNER, CORNER_LEFT_UPPER);
+         ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
+         ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
+         ObjectSetInteger(m_chartId, name, OBJPROP_BACK, false);
+        }
+      ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE, m_settings.panelX + x);
+      ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, m_settings.panelY + y);
+      ObjectSetInteger(m_chartId, name, OBJPROP_ANCHOR, AlignToAnchor(align));
+      ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, clr);
+      ObjectSetString(m_chartId, name, OBJPROP_FONT, fontName);
+      ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, fontSize);
+      ObjectSetString(m_chartId, name, OBJPROP_TEXT, s == "" ? " " : s);
+     }
+
    void Text(const int x, const int y, const string s, const color clr, const uint align, const bool bold = false)
      {
-      int size = (int)MathRound(-11 * m_settings.uiScale);
-      if(!m_canvas.FontSet("MiSans", size, FW_NORMAL))
-         m_canvas.FontSet("Arial", size, FW_NORMAL);
-      m_canvas.TextOut(x, y, s, ColorToARGB(clr, 255), align);
+      Lbl(x, y, s, clr, align, "MiSans", (int)MathRound(11 * m_settings.uiScale));
      }
 
    void TextFa(const int x, const int y, const string s, const color clr, const uint align)
      {
-      int size = (int)MathRound(-12 * m_settings.uiScale);
-      if(!m_canvas.FontSet("Vazir", size, FW_NORMAL))
-         m_canvas.FontSet("Tahoma", size, FW_NORMAL);
-      m_canvas.TextOut(x, y, s, ColorToARGB(clr, 255), align);
+      Lbl(x, y, s, clr, align, "Vazir", (int)MathRound(12 * m_settings.uiScale));
+     }
+
+   // Slides every already-placed label by the same delta the panel just
+   // moved by, so dragging the title bar doesn't leave the text behind.
+   void RepositionAllLabels()
+     {
+      for(int i = 0; i < m_labelSeq; i++)
+        {
+         string name = XAUT_OBJ_PREFIX + "TXT_" + IntegerToString(i);
+         ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE, m_settings.panelX + m_labelLX[i]);
+         ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, m_settings.panelY + m_labelLY[i]);
+        }
+     }
+
+   void PruneUnusedLabels()
+     {
+      for(int i = m_labelSeq; i < m_labelCountPrev; i++)
+        {
+         string name = XAUT_OBJ_PREFIX + "TXT_" + IntegerToString(i);
+         if(ObjectFind(m_chartId, name) >= 0)
+            ObjectDelete(m_chartId, name);
+        }
+      m_labelCountPrev = m_labelSeq;
+     }
+
+   void DeleteAllLabels()
+     {
+      for(int i = 0; i < 64; i++)
+        {
+         string name = XAUT_OBJ_PREFIX + "TXT_" + IntegerToString(i);
+         if(ObjectFind(m_chartId, name) >= 0)
+            ObjectDelete(m_chartId, name);
+        }
      }
 
    string L(const ENUM_TXT id) { return CLocalization::Get(id, m_settings.lang); }
@@ -196,7 +270,7 @@ private:
      }
 
 public:
-   CPanel() { m_created = false; m_settingsOpen = false; m_focusField = ""; m_dragPanel = false; m_dragSlider = false; m_caretOn = true; m_armBuyUntil = 0; m_armSellUntil = 0; }
+   CPanel() { m_created = false; m_settingsOpen = false; m_focusField = ""; m_dragPanel = false; m_dragSlider = false; m_caretOn = true; m_armBuyUntil = 0; m_armSellUntil = 0; m_labelSeq = 0; m_labelCountPrev = 0; }
 
    bool Create(const long chartId, const SAppSettings &settings)
      {
@@ -231,6 +305,7 @@ public:
       m_canvas.Destroy();
       if(ObjectFind(m_chartId, XAUT_PANEL_OBJ) >= 0)
          ObjectDelete(m_chartId, XAUT_PANEL_OBJ);
+      DeleteAllLabels();
       m_created = false;
      }
 
@@ -264,6 +339,7 @@ public:
    void Draw()
      {
       if(!m_created) return;
+      m_labelSeq = 0;
       SPalette pal = CTheme::Get(m_settings.theme);
       m_canvas.Erase(ColorToARGB(clrBlack, 0));
 
@@ -285,6 +361,7 @@ public:
 
       if(m_settings.collapsed)
         {
+         PruneUnusedLabels();
          m_canvas.Update();
          return;
         }
@@ -294,6 +371,7 @@ public:
       else
          DrawTradingBody(pal);
 
+      PruneUnusedLabels();
       m_canvas.Update();
      }
 
@@ -640,6 +718,7 @@ private:
          m_settings.panelY = newY;
          ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_XDISTANCE, newX);
          ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_YDISTANCE, newY);
+         RepositionAllLabels();
          return PANEL_ACTION_NONE;
         }
 
