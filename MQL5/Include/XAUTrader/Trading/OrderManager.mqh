@@ -139,6 +139,17 @@ public:
       return ok;
      }
 
+   bool ClosePosition(const ulong ticket, string &outMessage)
+     {
+      if(m_busy) { outMessage = "busy"; return false; }
+      if(!PositionSelectByTicket(ticket)) { outMessage = "not_found"; return false; }
+      m_busy = true;
+      bool ok = m_trade.PositionClose(ticket);
+      outMessage = ok ? "" : (IntegerToString(m_trade.ResultRetcode()) + " " + m_trade.ResultRetcodeDescription());
+      m_busy = false;
+      return ok;
+     }
+
    bool CancelPending(const ulong ticket, string &outMessage)
      {
       if(m_busy) { outMessage = "busy"; return false; }

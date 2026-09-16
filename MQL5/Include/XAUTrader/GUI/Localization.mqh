@@ -62,6 +62,11 @@ enum ENUM_TXT
    TXT_ERR_RISK_VALUE,
    TXT_ERR_ENTRY_WRONG_SIDE,
    TXT_ERR_BUSY,
+   TXT_OPEN_POSITIONS,
+   TXT_NO_POSITIONS,
+   TXT_MORE_POSITIONS,
+   TXT_CLOSE_POSITION,
+   TXT_CONFIRM_CLOSE,
    TXT_COUNT_ // sentinel
   };
 
@@ -137,6 +142,11 @@ private:
          case TXT_ERR_RISK_VALUE:       return "مقدار ریسک نامعتبر است";
          case TXT_ERR_ENTRY_WRONG_SIDE: return "قیمت ورود با نوع سفارش همخوانی ندارد";
          case TXT_ERR_BUSY:             return "در حال پردازش سفارش قبلی...";
+         case TXT_OPEN_POSITIONS:       return "پوزیشن‌های باز";
+         case TXT_NO_POSITIONS:         return "پوزیشن بازی وجود ندارد";
+         case TXT_MORE_POSITIONS:       return "مورد دیگر";
+         case TXT_CLOSE_POSITION:       return "بستن";
+         case TXT_CONFIRM_CLOSE:        return "برای تایید دوباره بزنید";
          default:                       return "";
         }
      }
@@ -199,6 +209,11 @@ private:
          case TXT_ERR_RISK_VALUE:       return "Invalid risk value";
          case TXT_ERR_ENTRY_WRONG_SIDE: return "Entry price doesn't match the order type";
          case TXT_ERR_BUSY:             return "Previous order still processing...";
+         case TXT_OPEN_POSITIONS:       return "Open Positions";
+         case TXT_NO_POSITIONS:         return "No open positions";
+         case TXT_MORE_POSITIONS:       return "more";
+         case TXT_CLOSE_POSITION:       return "Close";
+         case TXT_CONFIRM_CLOSE:        return "Tap again to confirm";
          default:                       return "";
         }
      }

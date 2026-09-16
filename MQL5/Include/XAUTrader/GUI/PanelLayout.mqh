@@ -20,9 +20,15 @@ struct SRect
 struct SPanelRects
   {
    int    scaleW, scaleH;      // total panel size at current scale
+   // Reusable geometry constants at the resolved scale, so any procedural
+   // layout (e.g. the dynamic-length positions list) doesn't have to
+   // recompute/duplicate them.
+   int    pad, contentX, contentY0, contentW, rowH, gap, btn;
+
    SRect  header;
    SRect  btnSettings;
    SRect  btnTheme;
+   SRect  btnPositions;
    SRect  btnMinimize;
    SRect  btnClose;
 
@@ -69,18 +75,22 @@ struct SPanelRects
       int rowH = (int)MathRound(30 * scale);
       int gap  = (int)MathRound(8 * scale);
       int btn  = (int)MathRound(22 * scale);
+      int contentW = W - 2 * pad;
+
+      r.pad = pad; r.contentX = pad; r.contentY0 = hh + pad; r.contentW = contentW;
+      r.rowH = rowH; r.gap = gap; r.btn = btn;
 
       r.header = Mk(0, 0, W, hh);
-      r.btnClose    = Mk(W - pad - btn, (hh - btn) / 2, btn, btn);
-      r.btnMinimize = Mk(r.btnClose.x - gap - btn, (hh - btn) / 2, btn, btn);
-      r.btnTheme    = Mk(r.btnMinimize.x - gap - btn, (hh - btn) / 2, btn, btn);
-      r.btnSettings = Mk(r.btnTheme.x - gap - btn, (hh - btn) / 2, btn, btn);
+      r.btnClose     = Mk(W - pad - btn, (hh - btn) / 2, btn, btn);
+      r.btnMinimize  = Mk(r.btnClose.x - gap - btn, (hh - btn) / 2, btn, btn);
+      r.btnPositions = Mk(r.btnMinimize.x - gap - btn, (hh - btn) / 2, btn, btn);
+      r.btnTheme     = Mk(r.btnPositions.x - gap - btn, (hh - btn) / 2, btn, btn);
+      r.btnSettings  = Mk(r.btnTheme.x - gap - btn, (hh - btn) / 2, btn, btn);
 
       if(collapsed)
          return r;
 
       int y = hh + pad;
-      int contentW = W - 2 * pad;
       int seg = contentW / 3;
 
       r.tabRiskPct    = Mk(pad,               y, seg - 4, rowH);

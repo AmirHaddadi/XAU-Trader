@@ -17,7 +17,9 @@
 #include <XAUTrader/Money/SymbolInfoCache.mqh>
 #include <XAUTrader/Money/RiskEngine.mqh>
 #include <XAUTrader/Trading/OrderManager.mqh>
+#include <XAUTrader/Trading/PositionTracker.mqh>
 #include <XAUTrader/Chart/LevelLines.mqh>
+#include <XAUTrader/Chart/PositionLines.mqh>
 #include <XAUTrader/GUI/Theme.mqh>
 #include <XAUTrader/GUI/Panel.mqh>
 #include <XAUTrader/Config/SettingsStore.mqh>
@@ -28,9 +30,23 @@ input int    InpDeviationPoints   = 20;         // Max price deviation (points) 
 CPanel          g_panel;
 COrderManager   g_orderMgr;
 CLevelLines     g_lines;
+CPositionLines  g_posLines;
 SAppSettings    g_settings;
 string          g_currency;
 bool            g_ready = false;
+
+// OnTick can fire many times a second on an active symbol; re-running the
+// risk engine and rewriting ~30 label objects + ChartRedraw() on every
+// single one made keyboard/drag input feel laggy (input competes with a
+// flood of tick-driven redraws). Recompute() itself is throttled to this
+// cadence; user-initiated redraws (keystrokes, clicks) always bypass it by
+// calling Recompute() directly, so those still feel instant.
+#define XAUT_RECOMPUTE_MIN_MS 150
+ulong g_lastRecomputeMs = 0;
+
+// Position list only needs to reflect reality, not literally every tick.
+#define XAUT_POSITION_SCAN_MIN_MS 500
+ulong g_lastPositionScanMs = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -39,6 +55,7 @@ int OnInit()
    g_currency = AccountInfoString(ACCOUNT_CURRENCY);
 
    g_lines.Init(ChartID());
+   g_posLines.Init(ChartID());
    g_orderMgr.Init(InpMagicNumber, InpDeviationPoints, "XAU-Trader");
 
    if(!g_panel.Create(ChartID(), g_settings))
@@ -55,6 +72,10 @@ int OnInit()
    EventSetMillisecondTimer(250);
 
    g_ready = true;
+   // Unconditional on attach/reinit (timeframe switch, template reload,
+   // terminal restart...) so an already-open position is picked back up
+   // immediately instead of only appearing on the next tick.
+   ScanAndRenderPositions();
    Recompute();
    ChartRedraw();
    return(INIT_SUCCEEDED);
@@ -67,13 +88,22 @@ void OnDeinit(const int reason)
    CSettingsStore::Save(g_panel.GetSettings());
    g_lines.Clear();
    g_panel.Destroy();
+   // Position lines represent real, still-open trades — only a true
+   // removal/chart-close should erase them. A timeframe/template/parameter
+   // change reinitializes the EA a moment later, and that fresh OnInit
+   // re-scans and re-adopts the same ticket-named objects seamlessly; not
+   // clearing them here avoids a pointless flash of the lines disappearing
+   // and reappearing.
+   if(reason == REASON_REMOVE || reason == REASON_CHARTCLOSE)
+      g_posLines.Clear();
   }
 
 //+------------------------------------------------------------------+
 void OnTick()
   {
    if(!g_ready) return;
-   Recompute();
+   RecomputeThrottled();
+   ScanAndRenderPositionsThrottled();
   }
 
 //+------------------------------------------------------------------+
@@ -82,7 +112,43 @@ void OnTimer()
    if(!g_ready) return;
    g_panel.ToggleCaret();
    g_panel.ClearArmedState();
-   Recompute();
+   g_panel.Draw(); // guarantees the caret blinks even between ticks (market closed, weekend)
+   RecomputeThrottled();
+   ScanAndRenderPositionsThrottled();
+   FlushPendingPositionModify();
+  }
+
+//+------------------------------------------------------------------+
+//| Dragging a real position's SL/TP line fires OBJECT_DRAG on every    |
+//| pixel of mouse movement, not just on release. Sending a real        |
+//| modify request to the broker for each one would spam the server     |
+//| and make the drag feel laggy, so only the *values* update           |
+//| immediately (visually the line already moves natively); the actual  |
+//| server call is throttled, with OnTimer guaranteeing the final       |
+//| dragged value still gets flushed shortly after the user lets go.    |
+//+------------------------------------------------------------------+
+#define XAUT_POS_MODIFY_MIN_MS 350
+ulong  g_lastPosModifyMs = 0;
+bool   g_posModifyDirty  = false;
+ulong  g_posModifyTicket = 0;
+double g_posModifySL     = 0.0;
+double g_posModifyTP     = 0.0;
+
+void FlushPendingPositionModify()
+  {
+   if(!g_posModifyDirty)
+      return;
+   ulong now = GetTickCount64();
+   if(now - g_lastPosModifyMs < XAUT_POS_MODIFY_MIN_MS)
+      return;
+   g_lastPosModifyMs = now;
+   g_posModifyDirty = false;
+
+   SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
+   string msg;
+   if(!g_orderMgr.ModifyPosition(g_posModifyTicket, g_posModifySL, g_posModifyTP, sym, msg))
+      Print("XAU Trader: position #", g_posModifyTicket, " modify failed — ", msg);
+   ScanAndRenderPositions();
   }
 
 //+------------------------------------------------------------------+
@@ -92,6 +158,40 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 
    if(id == CHARTEVENT_OBJECT_DRAG)
      {
+      ulong posTicket = 0;
+      double posPrice = 0.0;
+      string posWhich = g_posLines.DraggedLevel(sparam, posTicket, posPrice);
+      if(posWhich != "")
+        {
+         SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
+         if(sym.valid)
+            posPrice = NormalizeDouble(posPrice, sym.digits);
+         if(!PositionSelectByTicket(posTicket))
+           {
+            ScanAndRenderPositions();
+            return;
+           }
+         double sl = PositionGetDouble(POSITION_SL);
+         double tp = PositionGetDouble(POSITION_TP);
+         // A pending drag on the *other* line for the same ticket hasn't
+         // been sent to the server yet — build on that pending value
+         // instead of the stale server one, or the two would fight and
+         // whichever flushes last would silently undo the other.
+         if(g_posModifyDirty && g_posModifyTicket == posTicket)
+           {
+            sl = g_posModifySL;
+            tp = g_posModifyTP;
+           }
+         if(posWhich == "sl") sl = posPrice; else tp = posPrice;
+
+         g_posModifyDirty  = true;
+         g_posModifyTicket = posTicket;
+         g_posModifySL     = sl;
+         g_posModifyTP     = tp;
+         FlushPendingPositionModify();
+         return;
+        }
+
       double price = 0.0;
       string which = g_lines.DraggedLevel(sparam, price);
       if(which != "")
@@ -100,9 +200,9 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
          if(sym.valid)
             price = NormalizeDouble(price, sym.digits);
-         if(which == "entry") plan.entryPrice = price;
-         else if(which == "sl") plan.slPrice = price;
-         else if(which == "tp") plan.tpPrice = price;
+         if(which == "entry")     plan.entryPrice = price;
+         else if(which == "sl")   { plan.slPrice = price; plan.slUserSet = true; }
+         else if(which == "tp")   { plan.tpPrice = price; plan.tpUserSet = true; }
          g_panel.SetPlan(plan);
          Recompute();
         }
@@ -135,22 +235,91 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          ExpertRemove();
          break;
 
+      case PANEL_ACTION_CLOSE_POSITION:
+        {
+         ulong ticket = g_panel.ConsumeCloseRequest();
+         if(ticket != 0)
+           {
+            string msg;
+            if(!g_orderMgr.ClosePosition(ticket, msg))
+               Print("XAU Trader: close #", ticket, " failed — ", msg);
+            ScanAndRenderPositions();
+           }
+         break;
+        }
+
       default:
          break;
      }
   }
 
 //+------------------------------------------------------------------+
-//| Re-reads the symbol/account snapshot, infers trade direction      |
-//| from the SL/Entry relationship, re-runs the risk engine and       |
-//| pushes the result into both the panel and the chart level lines.  |
+void RecomputeThrottled()
+  {
+   ulong now = GetTickCount64();
+   if(now - g_lastRecomputeMs < XAUT_RECOMPUTE_MIN_MS)
+      return;
+   g_lastRecomputeMs = now;
+   Recompute();
+  }
+
+//+------------------------------------------------------------------+
+void ScanAndRenderPositionsThrottled()
+  {
+   ulong now = GetTickCount64();
+   if(now - g_lastPositionScanMs < XAUT_POSITION_SCAN_MIN_MS)
+      return;
+   g_lastPositionScanMs = now;
+   ScanAndRenderPositions();
+  }
+
+//+------------------------------------------------------------------+
+void ScanAndRenderPositions()
+  {
+   SPositionInfo positions[];
+   CPositionTracker::ScanSymbol(_Symbol, positions);
+   g_panel.SetPositions(positions);
+
+   SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
+   SPalette pal = CTheme::Get(g_panel.GetSettings().theme);
+   g_posLines.Render(positions, pal, g_panel.GetSettings().lang, g_currency, sym.valid ? sym.digits : _Digits);
+
+   if(g_panel.GetSettings().collapsed == false)
+      g_panel.Draw(); // refresh the header's position-count badge / open list
+  }
+
+//+------------------------------------------------------------------+
+//| Re-reads the symbol/account snapshot, seeds a sensible SL/TP        |
+//| default (until the user takes ownership of either), infers trade   |
+//| direction from the SL/Entry relationship, re-runs the risk engine   |
+//| and pushes the result into both the panel and the chart lines.      |
 //+------------------------------------------------------------------+
 void Recompute()
   {
    SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
    STradePlan plan = g_panel.GetPlan();
 
-   double refEntry = (plan.placement == PLACEMENT_MARKET) ? sym.ask : plan.entryPrice;
+   double refEntry = (plan.placement == PLACEMENT_MARKET) ? sym.ask
+                      : (plan.entryPrice > 0.0 ? plan.entryPrice : sym.ask);
+
+   if(sym.valid && refEntry > 0.0)
+     {
+      if(!plan.slUserSet)
+        {
+         double defDist = refEntry * (XAUT_DEFAULT_STOP_PERCENT / 100.0);
+         double minDist = (sym.stopsLevelPoints > 0) ? sym.stopsLevelPoints * sym.point * 1.5 : 0.0;
+         defDist = MathMax(defDist, minDist);
+         plan.slPrice = refEntry - defDist; // default bias: long, mirrors the BUY default direction
+        }
+      if(!plan.tpUserSet && plan.slPrice > 0.0)
+        {
+         double dist = MathAbs(refEntry - plan.slPrice);
+         bool buyBias = (plan.slPrice < refEntry);
+         plan.tpPrice = buyBias ? refEntry + XAUT_DEFAULT_REWARD_RATIO * dist
+                                 : refEntry - XAUT_DEFAULT_REWARD_RATIO * dist;
+        }
+     }
+
    if(plan.slPrice > 0.0 && refEntry > 0.0)
       plan.direction = (plan.slPrice < refEntry) ? TRADE_DIR_BUY : TRADE_DIR_SELL;
    g_panel.SetPlan(plan);
@@ -186,10 +355,24 @@ void SendFromPanel(const ENUM_TRADE_DIR dir)
    string msg; ulong ticket;
    bool ok = g_orderMgr.Send(plan, res.lots, sym, msg, ticket);
    if(!ok)
+     {
       Print("XAU Trader: order failed — ", msg);
-   else
-      Print("XAU Trader: order placed, ticket=", ticket);
+      Recompute();
+      return;
+     }
 
+   Print("XAU Trader: order placed, ticket=", ticket);
+   // Reset the ticket to a clean slate for the next trade rather than
+   // leaving the just-submitted numbers sitting in the fields (confusing,
+   // and one accidental extra click away from a duplicate order).
+   STradePlan fresh;
+   fresh.Defaults();
+   fresh.riskMode = plan.riskMode;
+   fresh.riskValue = plan.riskValue;
+   fresh.placement = plan.placement;
+   g_panel.SetPlan(fresh);
+
+   ScanAndRenderPositions();
    Recompute();
   }
 //+------------------------------------------------------------------+

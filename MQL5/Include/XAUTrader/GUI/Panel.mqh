@@ -20,7 +20,8 @@ enum ENUM_PANEL_ACTION
    PANEL_ACTION_SETTINGS_CHANGED,
    PANEL_ACTION_SEND_BUY,
    PANEL_ACTION_SEND_SELL,
-   PANEL_ACTION_CLOSE_REQUESTED
+   PANEL_ACTION_CLOSE_REQUESTED,
+   PANEL_ACTION_CLOSE_POSITION
   };
 
 #define XAUT_PANEL_OBJ (XAUT_OBJ_PREFIX + "PANEL_BMP")
@@ -50,9 +51,19 @@ private:
    SPanelRects    m_rc;
 
    bool           m_settingsOpen;
+   bool           m_positionsOpen;
    string         m_focusField;     // "", "risk", "entry", "sl", "tp"
    string         m_editBuffer;
    bool           m_caretOn;
+
+   SPositionInfo  m_positions[];
+   ulong          m_closeRequestTicket;
+   ulong          m_armCloseTicket;
+   datetime       m_armCloseUntil;
+   int            m_posRowCount;
+   ulong          m_posRowTicket[8];
+   SRect          m_posRowClose[8];
+   int            m_posOverflowCount; // positions that didn't fit and aren't clickable
 
    bool           m_dragPanel;
    int            m_dragDX, m_dragDY;
@@ -107,6 +118,15 @@ private:
       else
         {
          m_canvas.FillCircle(cx, cy, r, clr);
+        }
+     }
+
+   void DrawIconPositions(const int cx, const int cy, const int half, const color clr)
+     {
+      for(int i = -1; i <= 1; i++)
+        {
+         int y = cy + i * (half - 1);
+         m_canvas.Line(cx - half, y, cx + half, y, clr);
         }
      }
 
@@ -270,7 +290,14 @@ private:
      }
 
 public:
-   CPanel() { m_created = false; m_settingsOpen = false; m_focusField = ""; m_dragPanel = false; m_dragSlider = false; m_caretOn = true; m_armBuyUntil = 0; m_armSellUntil = 0; m_labelSeq = 0; m_labelCountPrev = 0; }
+   CPanel()
+     {
+      m_created = false; m_settingsOpen = false; m_positionsOpen = false; m_focusField = "";
+      m_dragPanel = false; m_dragSlider = false; m_caretOn = true;
+      m_armBuyUntil = 0; m_armSellUntil = 0; m_labelSeq = 0; m_labelCountPrev = 0;
+      m_closeRequestTicket = 0; m_armCloseTicket = 0; m_armCloseUntil = 0;
+      m_posRowCount = 0; m_posOverflowCount = 0;
+     }
 
    bool Create(const long chartId, const SAppSettings &settings)
      {
@@ -323,6 +350,20 @@ public:
       m_currency = currency;
      }
 
+   void SetPositions(const SPositionInfo &positions[])
+     {
+      ArrayResize(m_positions, ArraySize(positions));
+      for(int i = 0; i < ArraySize(positions); i++)
+         m_positions[i] = positions[i];
+     }
+
+   ulong ConsumeCloseRequest()
+     {
+      ulong t = m_closeRequestTicket;
+      m_closeRequestTicket = 0;
+      return t;
+     }
+
    void ToggleCaret() { m_caretOn = !m_caretOn; }
 
    //--- Rebuilds the geometry cache (call after scale/collapse changes) and repositions the bitmap.
@@ -356,6 +397,7 @@ public:
 
       DrawIconGear(m_rc.btnSettings.x + m_rc.btnSettings.w / 2, hcy, (int)(6 * m_settings.uiScale), CTheme::HeaderText());
       DrawIconTheme(m_rc.btnTheme.x + m_rc.btnTheme.w / 2, hcy, (int)(6 * m_settings.uiScale), m_settings.theme == THEME_DARK, CTheme::HeaderText());
+      DrawIconPositions(m_rc.btnPositions.x + m_rc.btnPositions.w / 2, hcy, (int)(6 * m_settings.uiScale), ArraySize(m_positions) > 0 ? pal.accentGold : CTheme::HeaderText());
       DrawIconMinimize(m_rc.btnMinimize.x + m_rc.btnMinimize.w / 2, hcy, (int)(6 * m_settings.uiScale), CTheme::HeaderText());
       DrawIconClose(m_rc.btnClose.x + m_rc.btnClose.w / 2, hcy, (int)(5 * m_settings.uiScale), CTheme::HeaderText());
 
@@ -369,6 +411,8 @@ public:
 
       if(m_settingsOpen)
          DrawSettingsBody(pal);
+      else if(m_positionsOpen)
+         DrawPositionsBody(pal);
       else
          DrawTradingBody(pal);
 
@@ -400,6 +444,109 @@ private:
       FillRect(thumb, pal.accentGold);
 
       DrawSegment(m_rc.setBack, L(TXT_SAVE), true, pal);
+     }
+
+   void DrawPositionsBody(const SPalette &pal)
+     {
+      m_posRowCount = 0;
+      m_posOverflowCount = 0;
+      bool rtl = RTL();
+      int n = ArraySize(m_positions);
+
+      int titleH = (int)MathRound(22 * m_settings.uiScale);
+      DrawLabel(rtl ? m_rc.contentX + m_rc.contentW : m_rc.contentX, m_rc.contentY0,
+                L(TXT_OPEN_POSITIONS) + " (" + IntegerToString(n) + ")", pal.textPrimary, !rtl);
+
+      int y = m_rc.contentY0 + titleH + m_rc.gap;
+
+      if(n == 0)
+        {
+         SRect empty = { m_rc.contentX, y, m_rc.contentW, (int)MathRound(60 * m_settings.uiScale) };
+         DrawCentered(empty, L(TXT_NO_POSITIONS), pal.textMuted);
+         return;
+        }
+
+      int rh = (int)MathRound(46 * m_settings.uiScale);
+      int availH = m_rc.scaleH - y - m_rc.pad;
+      int maxRows = MathMax(1, availH / rh);
+      int shown = MathMin(n, maxRows);
+      if(n > maxRows)
+         shown = MathMax(1, maxRows - 1); // leave room for the "+N more" line
+
+      for(int i = 0; i < shown; i++)
+        {
+         DrawPositionRow(m_positions[i], y, rh, pal);
+         y += rh;
+        }
+
+      if(n > shown)
+        {
+         m_posOverflowCount = n - shown;
+         SRect moreRect = { m_rc.contentX, y, m_rc.contentW, rh };
+         DrawCentered(moreRect, "+" + IntegerToString(m_posOverflowCount) + " " + L(TXT_MORE_POSITIONS), pal.textMuted);
+        }
+     }
+
+   void DrawPositionRow(const SPositionInfo &p, const int y, const int rh, const SPalette &pal)
+     {
+      bool rtl = RTL();
+      bool isBuy = (p.type == POSITION_TYPE_BUY);
+      color dirClr = isBuy ? pal.buy : pal.sell;
+      color plClr  = (p.profit >= 0.0) ? pal.buy : pal.sell;
+      int gapSmall = (int)MathRound(6 * m_settings.uiScale);
+      int btn = (int)MathRound(26 * m_settings.uiScale);
+
+      SRect closeRect;
+      closeRect.y = y + (rh - btn) / 2;
+      closeRect.w = btn;
+      closeRect.h = btn;
+      int textX, textW;
+      if(rtl)
+        {
+         closeRect.x = m_rc.contentX;
+         textX = m_rc.contentX + btn + gapSmall;
+         textW = m_rc.contentW - btn - gapSmall;
+        }
+      else
+        {
+         closeRect.x = m_rc.contentX + m_rc.contentW - btn;
+         textX = m_rc.contentX;
+         textW = m_rc.contentW - btn - gapSmall;
+        }
+
+      int line1Y = y + (int)MathRound(4 * m_settings.uiScale);
+      int line2Y = y + (int)MathRound(24 * m_settings.uiScale);
+
+      string dirTxt = (isBuy ? L(TXT_BUY) : L(TXT_SELL)) + " " + DoubleToString(p.volume, 2) + " @ " + DoubleToString(p.priceOpen, m_sym.digits);
+      string plTxt  = (p.profit >= 0.0 ? "+" : "") + DoubleToString(p.profit, 2);
+      DrawSplitLine(textX, line1Y, textW, dirTxt, dirClr, plTxt, plClr, rtl);
+
+      string levelsTxt = L(TXT_SL) + " " + (p.sl > 0.0 ? DoubleToString(p.sl, m_sym.digits) : "—") +
+                          "   " + L(TXT_TP) + " " + (p.tp > 0.0 ? DoubleToString(p.tp, m_sym.digits) : "—");
+      DrawLabel(rtl ? textX + textW : textX, line2Y, levelsTxt, pal.textMuted, !rtl);
+
+      bool armed = (m_armCloseTicket == p.ticket && m_armCloseUntil > TimeCurrent());
+      FillRect(closeRect, armed ? pal.sell : pal.cardAlt);
+      DrawCentered(closeRect, armed ? "?" : "×", armed ? CTheme::HeaderText() : pal.textMuted);
+
+      if(m_posRowCount < 8)
+        {
+         m_posRowTicket[m_posRowCount] = p.ticket;
+         m_posRowClose[m_posRowCount] = closeRect;
+         m_posRowCount++;
+        }
+     }
+
+   // "start" = reading-start side (left for LTR, right for RTL), "end" = the other side.
+   void DrawSplitLine(const int x, const int y, const int w, const string startText, const color startClr,
+                       const string endText, const color endClr, const bool rtl)
+     {
+      int startX = rtl ? x + w : x;
+      int endX   = rtl ? x     : x + w;
+      uint startAlign = (rtl ? TA_RIGHT : TA_LEFT) | TA_TOP;
+      uint endAlign   = (rtl ? TA_LEFT  : TA_RIGHT) | TA_TOP;
+      if(rtl) { TextFa(startX, y, startText, startClr, startAlign); TextFa(endX, y, endText, endClr, endAlign); }
+      else     { Text(startX, y, startText, startClr, startAlign);   Text(endX, y, endText, endClr, endAlign); }
      }
 
    void DrawTradingBody(const SPalette &pal)
@@ -551,8 +698,8 @@ private:
          if(CXautUtils::IsFinitePositive(v)) m_plan.riskValue = v;
         }
       else if(m_focusField == "entry") m_plan.entryPrice = v;
-      else if(m_focusField == "sl")    m_plan.slPrice = v;
-      else if(m_focusField == "tp")    m_plan.tpPrice = v;
+      else if(m_focusField == "sl")    { m_plan.slPrice = v; m_plan.slUserSet = true; }
+      else if(m_focusField == "tp")    { m_plan.tpPrice = v; m_plan.tpUserSet = true; }
       m_focusField = "";
       m_editBuffer = "";
      }
@@ -593,6 +740,14 @@ private:
          if(m_rc.btnSettings.Contains(lx, ly))
            {
             m_settingsOpen = !m_settingsOpen;
+            if(m_settingsOpen) m_positionsOpen = false;
+            Draw();
+            return PANEL_ACTION_NONE;
+           }
+         if(m_rc.btnPositions.Contains(lx, ly))
+           {
+            m_positionsOpen = !m_positionsOpen;
+            if(m_positionsOpen) m_settingsOpen = false;
             Draw();
             return PANEL_ACTION_NONE;
            }
@@ -605,6 +760,8 @@ private:
 
       if(m_settingsOpen)
          return OnClickSettings(lx, ly);
+      if(m_positionsOpen)
+         return OnClickPositions(lx, ly);
 
       return OnClickTrading(lx, ly);
      }
@@ -624,6 +781,27 @@ private:
          return PANEL_ACTION_SETTINGS_CHANGED;
         }
       if(m_rc.setBack.Contains(lx, ly)) { m_settingsOpen = false; Draw(); return PANEL_ACTION_SETTINGS_CHANGED; }
+      return PANEL_ACTION_NONE;
+     }
+
+   ENUM_PANEL_ACTION OnClickPositions(const int lx, const int ly)
+     {
+      for(int i = 0; i < m_posRowCount; i++)
+        {
+         if(!m_posRowClose[i].Contains(lx, ly))
+            continue;
+         ulong ticket = m_posRowTicket[i];
+         if(m_armCloseTicket == ticket && m_armCloseUntil > TimeCurrent())
+           {
+            m_armCloseTicket = 0;
+            m_closeRequestTicket = ticket;
+            return PANEL_ACTION_CLOSE_POSITION;
+           }
+         m_armCloseTicket = ticket;
+         m_armCloseUntil = TimeCurrent() + XAUT_ARM_SECONDS;
+         Draw();
+         return PANEL_ACTION_NONE;
+        }
       return PANEL_ACTION_NONE;
      }
 
@@ -783,6 +961,7 @@ public:
      {
       if(m_armBuyUntil != 0 && m_armBuyUntil <= TimeCurrent())  { m_armBuyUntil = 0; Draw(); }
       if(m_armSellUntil != 0 && m_armSellUntil <= TimeCurrent()) { m_armSellUntil = 0; Draw(); }
+      if(m_armCloseTicket != 0 && m_armCloseUntil <= TimeCurrent()) { m_armCloseTicket = 0; Draw(); }
      }
   };
 //+------------------------------------------------------------------+

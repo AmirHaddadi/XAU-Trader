@@ -12,12 +12,18 @@
 #define XAUT_GV_PREFIX       "XAUT_"          // GlobalVariable name prefix (per-terminal, per-symbol suffix appended)
 
 // Panel geometry (logical pixels at scale = 1.0)
-#define XAUT_PANEL_BASE_W    272
+#define XAUT_PANEL_BASE_W    300
 #define XAUT_PANEL_BASE_H    470  // must clear the trading body's real content height (~462 at scale 1.0) or the buy/sell row clips off the bottom
 #define XAUT_PANEL_MIN_SCALE 0.75
 #define XAUT_PANEL_MAX_SCALE 1.75
 #define XAUT_HEADER_H        34
 #define XAUT_MIN_VISIBLE_PX  40   // header pixels that must always remain on-screen when dragging
+
+// Default distance (percent of price) for an auto-suggested stop, used only
+// until the user drags/types their own SL. Take-profit then auto-tracks a
+// 1:2 reward off whatever SL is active, until the user takes it over too.
+#define XAUT_DEFAULT_STOP_PERCENT 0.4
+#define XAUT_DEFAULT_REWARD_RATIO 2.0
 
 //--- Risk sizing mode: how the lot size is derived
 enum ENUM_RISK_MODE

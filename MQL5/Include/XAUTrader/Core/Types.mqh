@@ -42,6 +42,8 @@ struct STradePlan
    double                entryPrice;    // ignored for PLACEMENT_MARKET (live price used)
    double                slPrice;
    double                tpPrice;
+   bool                  slUserSet;     // false = SL still auto-tracks a sensible default
+   bool                  tpUserSet;     // false = TP still auto-tracks a 1:2 reward off SL
 
    void Defaults()
      {
@@ -49,6 +51,8 @@ struct STradePlan
       riskValue  = 1.0;
       placement  = PLACEMENT_MARKET;
       direction  = TRADE_DIR_BUY;
+      slUserSet  = false;
+      tpUserSet  = false;
       entryPrice = 0.0;
       slPrice    = 0.0;
       tpPrice    = 0.0;
@@ -98,5 +102,22 @@ struct SSymbolSnapshot
    int      freezeLevelPoints;
    long     tradeMode;      // SYMBOL_TRADE_MODE_*
    bool     valid;
+  };
+
+//--- One open position on the current symbol, as last scanned from the
+//--- terminal's own position list (never cached across scans — the
+//--- terminal is always the source of truth, which is what lets the panel
+//--- recover an existing position after a timeframe switch/EA reinit).
+struct SPositionInfo
+  {
+   ulong              ticket;
+   ENUM_POSITION_TYPE type;      // POSITION_TYPE_BUY / POSITION_TYPE_SELL
+   double             volume;
+   double             priceOpen;
+   double             sl;
+   double             tp;
+   double             profit;    // floating P/L including swap
+   long               magic;
+   datetime           timeOpen;
   };
 //+------------------------------------------------------------------+
