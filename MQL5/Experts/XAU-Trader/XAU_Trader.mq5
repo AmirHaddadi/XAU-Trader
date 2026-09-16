@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Amirreza Haddadi"
 #property link      "https://github.com/AmirHaddadi/XAU-Trader"
-#property version   "1.10"
+#property version   "1.11"
 #property description "Real-time position sizing & money-management panel — draw your entry/SL/TP, choose market/limit/stop, and XAU Trader computes broker-valid lots from a %balance, %equity or fixed-$ risk budget."
 #property strict
 
