@@ -39,7 +39,7 @@ private:
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, clr);
       ObjectSetInteger(m_chartId, name, OBJPROP_STYLE, STYLE_SOLID);
       ObjectSetInteger(m_chartId, name, OBJPROP_WIDTH, 2);
-      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, false);
+      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, true); // see LevelLines.mqh — the panel stays foreground so it always wins
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, true);
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
       ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
@@ -69,6 +69,7 @@ private:
       ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 8);
       ObjectSetString(m_chartId, name, OBJPROP_FONT, "Arial");
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, true);
       ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
      }
 

@@ -36,7 +36,11 @@ private:
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, clr);
       ObjectSetInteger(m_chartId, name, OBJPROP_STYLE, STYLE_DASH);
       ObjectSetInteger(m_chartId, name, OBJPROP_WIDTH, 1);
-      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, false);
+      // Background layer — the only mechanism MT5 actually guarantees for
+      // stacking order (unlike OBJPROP_ZORDER, which only affects click
+      // priority, not what's drawn on top). The panel bitmap stays
+      // foreground, so it's always painted after/above these.
+      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, true);
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, draggable);
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
       ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true); // keep it out of the object list clutter
@@ -71,6 +75,7 @@ private:
       ObjectSetInteger(m_chartId, name, OBJPROP_FONTSIZE, 8);
       ObjectSetString(m_chartId, name, OBJPROP_FONT, "Arial");
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
+      ObjectSetInteger(m_chartId, name, OBJPROP_BACK, true);
       ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
      }
 

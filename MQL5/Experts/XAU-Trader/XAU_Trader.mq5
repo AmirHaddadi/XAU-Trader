@@ -35,17 +35,26 @@ SAppSettings    g_settings;
 string          g_currency;
 bool            g_ready = false;
 
-// OnTick can fire many times a second on an active symbol; re-running the
-// risk engine and rewriting ~30 label objects + ChartRedraw() on every
-// single one made keyboard/drag input feel laggy (input competes with a
-// flood of tick-driven redraws). Recompute() itself is throttled to this
-// cadence; user-initiated redraws (keystrokes, clicks) always bypass it by
-// calling Recompute() directly, so those still feel instant.
-#define XAUT_RECOMPUTE_MIN_MS 150
-ulong g_lastRecomputeMs = 0;
+// Everything expensive (canvas repaint, ~30+ label object writes, the
+// chart price-line objects, ChartRedraw()) used to fire from three
+// independent, overlapping sources — OnTick, OnTimer's caret blink, and the
+// position-scan timer — each calling Draw()/Render() on its own schedule.
+// Stacked together that was several full redraws a second even at idle,
+// which is real, avoidable overhead on top of whatever Wine itself costs.
+// Now OnTick/OnTimer only ever update plain data (risk math, position scan
+// — no chart objects touched); OnTimer's fixed 250ms tick is the *only*
+// place that actually repaints, so the ceiling is a hard 4/sec no matter
+// how fast the symbol ticks. Direct user actions (click/key/drag) still
+// call RenderAll() immediately, so those stay instant.
+STradePlan      g_lastPlan;
+SRiskResult     g_lastResult;
+SSymbolSnapshot g_lastSym;
+SPositionInfo   g_lastPositions[];
 
-// Position list only needs to reflect reality, not literally every tick.
-#define XAUT_POSITION_SCAN_MIN_MS 500
+#define XAUT_DATA_UPDATE_MIN_MS 150
+ulong g_lastDataUpdateMs = 0;
+
+#define XAUT_POSITION_SCAN_MIN_MS 1000
 ulong g_lastPositionScanMs = 0;
 
 //+------------------------------------------------------------------+
@@ -75,9 +84,9 @@ int OnInit()
    // Unconditional on attach/reinit (timeframe switch, template reload,
    // terminal restart...) so an already-open position is picked back up
    // immediately instead of only appearing on the next tick.
-   ScanAndRenderPositions();
-   Recompute();
-   ChartRedraw();
+   ScanPositionsData();
+   UpdateData();
+   RenderAll();
    return(INIT_SUCCEEDED);
   }
 
@@ -102,8 +111,8 @@ void OnDeinit(const int reason)
 void OnTick()
   {
    if(!g_ready) return;
-   RecomputeThrottled();
-   ScanAndRenderPositionsThrottled();
+   UpdateDataThrottled();
+   ScanPositionsDataThrottled();
   }
 
 //+------------------------------------------------------------------+
@@ -112,10 +121,10 @@ void OnTimer()
    if(!g_ready) return;
    g_panel.ToggleCaret();
    g_panel.ClearArmedState();
-   g_panel.Draw(); // guarantees the caret blinks even between ticks (market closed, weekend)
-   RecomputeThrottled();
-   ScanAndRenderPositionsThrottled();
+   UpdateDataThrottled();
+   ScanPositionsDataThrottled();
    FlushPendingPositionModify();
+   RenderAll(); // the one place a full repaint actually happens — fixed 4/sec ceiling
   }
 
 //+------------------------------------------------------------------+
@@ -269,60 +278,65 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
   }
 
 //+------------------------------------------------------------------+
-void RecomputeThrottled()
+void UpdateDataThrottled()
   {
    ulong now = GetTickCount64();
-   if(now - g_lastRecomputeMs < XAUT_RECOMPUTE_MIN_MS)
+   if(now - g_lastDataUpdateMs < XAUT_DATA_UPDATE_MIN_MS)
       return;
-   g_lastRecomputeMs = now;
-   Recompute();
+   g_lastDataUpdateMs = now;
+   UpdateData();
   }
 
 //+------------------------------------------------------------------+
-void ScanAndRenderPositionsThrottled()
+void ScanPositionsDataThrottled()
   {
    ulong now = GetTickCount64();
    if(now - g_lastPositionScanMs < XAUT_POSITION_SCAN_MIN_MS)
       return;
    g_lastPositionScanMs = now;
-   ScanAndRenderPositions();
+   ScanPositionsData();
   }
 
 //+------------------------------------------------------------------+
+void ScanPositionsData()
+  {
+   CPositionTracker::ScanSymbol(_Symbol, g_lastPositions);
+   g_panel.SetPositions(g_lastPositions);
+  }
+
+//+------------------------------------------------------------------+
+//| Backward-compatible composite: update the position scan AND repaint |
+//| immediately. Used by direct user actions (close button, drag) where  |
+//| instant feedback matters — everything else goes through the plain    |
+//| *Data()/Throttled() variants and waits for the next timer repaint.   |
+//+------------------------------------------------------------------+
 void ScanAndRenderPositions()
   {
-   SPositionInfo positions[];
-   CPositionTracker::ScanSymbol(_Symbol, positions);
-   g_panel.SetPositions(positions);
-
-   SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
-   SPalette pal = CTheme::Get(g_panel.GetSettings().theme);
-   g_posLines.Render(positions, pal, g_panel.GetSettings().lang, g_currency, sym.valid ? sym.digits : _Digits);
-
-   if(g_panel.GetSettings().collapsed == false)
-      g_panel.Draw(); // refresh the header's position-count badge / open list
+   ScanPositionsData();
+   RenderAll();
   }
 
 //+------------------------------------------------------------------+
 //| Re-reads the symbol/account snapshot, seeds a sensible SL/TP        |
 //| default (until the user takes ownership of either), infers trade   |
-//| direction from the SL/Entry relationship, re-runs the risk engine   |
-//| and pushes the result into both the panel and the chart lines.      |
+//| direction from the SL/Entry relationship, and re-runs the risk      |
+//| engine. Pure data — touches no chart object, so it's cheap enough   |
+//| to call on every tick; RenderAll() is what actually paints it.      |
 //+------------------------------------------------------------------+
-void Recompute()
+void UpdateData()
   {
-   SSymbolSnapshot sym = CSymbolInfoCache::Read(_Symbol);
+   g_lastSym = CSymbolInfoCache::Read(_Symbol);
    STradePlan plan = g_panel.GetPlan();
 
-   double refEntry = (plan.placement == PLACEMENT_MARKET) ? sym.ask
-                      : (plan.entryPrice > 0.0 ? plan.entryPrice : sym.ask);
+   double refEntry = (plan.placement == PLACEMENT_MARKET) ? g_lastSym.ask
+                      : (plan.entryPrice > 0.0 ? plan.entryPrice : g_lastSym.ask);
 
-   if(sym.valid && refEntry > 0.0)
+   if(g_lastSym.valid && refEntry > 0.0)
      {
       if(!plan.slUserSet)
         {
          double defDist = refEntry * (XAUT_DEFAULT_STOP_PERCENT / 100.0);
-         double minDist = (sym.stopsLevelPoints > 0) ? sym.stopsLevelPoints * sym.point * 1.5 : 0.0;
+         double minDist = (g_lastSym.stopsLevelPoints > 0) ? g_lastSym.stopsLevelPoints * g_lastSym.point * 1.5 : 0.0;
          defDist = MathMax(defDist, minDist);
          plan.slPrice = refEntry - defDist; // default bias: long, mirrors the BUY default direction
         }
@@ -338,19 +352,41 @@ void Recompute()
    if(plan.slPrice > 0.0 && refEntry > 0.0)
       plan.direction = (plan.slPrice < refEntry) ? TRADE_DIR_BUY : TRADE_DIR_SELL;
    g_panel.SetPlan(plan);
+   g_lastPlan = plan;
 
-   SRiskResult res = CRiskEngine::Evaluate(plan, sym);
-   g_panel.UpdateMarket(res, sym, g_currency);
+   g_lastResult = CRiskEngine::Evaluate(plan, g_lastSym);
+   g_panel.UpdateMarket(g_lastResult, g_lastSym, g_currency);
+  }
+
+//+------------------------------------------------------------------+
+//| Backward-compatible composite — see UpdateData()'s note.             |
+//+------------------------------------------------------------------+
+void Recompute()
+  {
+   UpdateData();
+   RenderAll();
+  }
+
+//+------------------------------------------------------------------+
+//| The one place that actually repaints: the panel canvas/labels, the   |
+//| planning Entry/SL/TP lines, and every open position's SL/TP lines,   |
+//| all from whatever UpdateData()/ScanPositionsData() last computed.    |
+//+------------------------------------------------------------------+
+void RenderAll()
+  {
    g_panel.Draw();
 
    SPalette pal = CTheme::Get(g_panel.GetSettings().theme);
-   bool marketMode = (plan.placement == PLACEMENT_MARKET);
-   double lineEntry = marketMode ? ((plan.direction == TRADE_DIR_BUY) ? sym.ask : sym.bid) : plan.entryPrice;
+   bool marketMode = (g_lastPlan.placement == PLACEMENT_MARKET);
+   double lineEntry = marketMode ? ((g_lastPlan.direction == TRADE_DIR_BUY) ? g_lastSym.ask : g_lastSym.bid) : g_lastPlan.entryPrice;
 
    g_lines.Render(pal, g_panel.GetSettings().lang, g_currency,
-                  lineEntry, plan.slPrice, plan.tpPrice,
-                  !marketMode, sym.valid ? sym.digits : _Digits,
-                  res.riskMoney, res.rewardMoney);
+                  lineEntry, g_lastPlan.slPrice, g_lastPlan.tpPrice,
+                  !marketMode, g_lastSym.valid ? g_lastSym.digits : _Digits,
+                  g_lastResult.riskMoney, g_lastResult.rewardMoney);
+
+   g_posLines.Render(g_lastPositions, pal, g_panel.GetSettings().lang, g_currency,
+                      g_lastSym.valid ? g_lastSym.digits : _Digits);
   }
 
 //+------------------------------------------------------------------+
