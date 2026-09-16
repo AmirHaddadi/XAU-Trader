@@ -329,6 +329,12 @@ void UpdateData()
    double refEntry = (plan.placement == PLACEMENT_MARKET) ? g_lastSym.ask
                       : (plan.entryPrice > 0.0 ? plan.entryPrice : g_lastSym.ask);
 
+   // Pending orders have no typed price field anymore — the entry line is the
+   // only way to set it, so it needs a live starting price the first time the
+   // user switches to Limit/Stop, or there'd be nothing at price 0 to drag.
+   if(plan.placement != PLACEMENT_MARKET && plan.entryPrice <= 0.0 && refEntry > 0.0)
+      plan.entryPrice = refEntry;
+
    if(g_lastSym.valid && refEntry > 0.0)
      {
       if(!plan.slUserSet)
@@ -342,8 +348,8 @@ void UpdateData()
         {
          double dist = MathAbs(refEntry - plan.slPrice);
          bool buyBias = (plan.slPrice < refEntry);
-         plan.tpPrice = buyBias ? refEntry + XAUT_DEFAULT_REWARD_RATIO * dist
-                                 : refEntry - XAUT_DEFAULT_REWARD_RATIO * dist;
+         plan.tpPrice = buyBias ? refEntry + plan.rrRatio * dist
+                                 : refEntry - plan.rrRatio * dist;
         }
      }
 
@@ -375,13 +381,21 @@ void RenderAll()
    g_panel.Draw();
 
    SPalette pal = CTheme::Get(g_panel.GetSettings().theme);
-   bool marketMode = (g_lastPlan.placement == PLACEMENT_MARKET);
-   double lineEntry = marketMode ? ((g_lastPlan.direction == TRADE_DIR_BUY) ? g_lastSym.ask : g_lastSym.bid) : g_lastPlan.entryPrice;
 
-   g_lines.Render(pal, g_panel.GetSettings().lang, g_currency,
-                  lineEntry, g_lastPlan.slPrice, g_lastPlan.tpPrice,
-                  !marketMode, g_lastSym.valid ? g_lastSym.digits : _Digits,
-                  g_lastResult.riskMoney, g_lastResult.rewardMoney);
+   // Planning Entry/SL/TP lines stay off the chart until the user actually
+   // starts configuring a trade — no clutter on attach/after a fresh reset.
+   if(g_panel.IsReviewing())
+     {
+      bool marketMode = (g_lastPlan.placement == PLACEMENT_MARKET);
+      double lineEntry = marketMode ? ((g_lastPlan.direction == TRADE_DIR_BUY) ? g_lastSym.ask : g_lastSym.bid) : g_lastPlan.entryPrice;
+
+      g_lines.Render(pal, g_panel.GetSettings().lang, g_currency,
+                     lineEntry, g_lastPlan.slPrice, g_lastPlan.tpPrice,
+                     !marketMode, g_lastSym.valid ? g_lastSym.digits : _Digits,
+                     g_lastResult.riskMoney, g_lastResult.rewardMoney);
+     }
+   else
+      g_lines.Clear();
 
    g_posLines.Render(g_lastPositions, pal, g_panel.GetSettings().lang, g_currency,
                       g_lastSym.valid ? g_lastSym.digits : _Digits);
@@ -419,6 +433,7 @@ void SendFromPanel(const ENUM_TRADE_DIR dir)
    fresh.riskMode = plan.riskMode;
    fresh.riskValue = plan.riskValue;
    fresh.placement = plan.placement;
+   fresh.rrRatio = plan.rrRatio;
    g_panel.SetPlan(fresh);
 
    ScanAndRenderPositions();

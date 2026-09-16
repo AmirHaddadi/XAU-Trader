@@ -28,10 +28,23 @@ private:
             ObjectDelete(m_chartId, name);
          return;
         }
-      if(ObjectFind(m_chartId, name) < 0)
+      bool isNew = (ObjectFind(m_chartId, name) < 0);
+      if(isNew)
          ObjectCreate(m_chartId, name, OBJ_HLINE, 0, 0, price);
       else
          ObjectSetDouble(m_chartId, name, OBJPROP_PRICE, price);
+
+      // OBJPROP_SELECTED (not just SELECTABLE) must be true for MT5 to let the
+      // user grab/drag the line. It must only be set on the false->true
+      // transition (creation, or entry flipping non-draggable->draggable when
+      // placement changes) — re-asserting it on every redraw (as this used to
+      // do, every ~250ms via the render timer) yanked the line out of its
+      // draggable state mid-drag, which is why dragging silently didn't work.
+      bool wasSelectable = !isNew && ObjectGetInteger(m_chartId, name, OBJPROP_SELECTABLE) != 0;
+      if(draggable && !wasSelectable)
+         ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, true);
+      else if(!draggable)
+         ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
 
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, clr);
       ObjectSetInteger(m_chartId, name, OBJPROP_STYLE, STYLE_DASH);
@@ -42,7 +55,6 @@ private:
       // foreground, so it's always painted after/above these.
       ObjectSetInteger(m_chartId, name, OBJPROP_BACK, true);
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, draggable);
-      ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
       ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true); // keep it out of the object list clutter
      }
 

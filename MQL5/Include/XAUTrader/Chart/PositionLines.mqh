@@ -32,8 +32,16 @@ private:
          if(ObjectFind(m_chartId, name) >= 0) ObjectDelete(m_chartId, name);
          return;
         }
-      if(ObjectFind(m_chartId, name) < 0)
+      bool isNew = (ObjectFind(m_chartId, name) < 0);
+      if(isNew)
+        {
          ObjectCreate(m_chartId, name, OBJ_HLINE, 0, 0, price);
+         // Must be set true at creation, once, or MT5 won't let the user grab
+         // the line — see LevelLines.mqh for the full explanation. Forcing it
+         // back to false on every redraw (the old behavior here) killed
+         // dragging on every open position's SL/TP line the same way.
+         ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, true);
+        }
       else
          ObjectSetDouble(m_chartId, name, OBJPROP_PRICE, price);
       ObjectSetInteger(m_chartId, name, OBJPROP_COLOR, clr);
@@ -41,7 +49,6 @@ private:
       ObjectSetInteger(m_chartId, name, OBJPROP_WIDTH, 2);
       ObjectSetInteger(m_chartId, name, OBJPROP_BACK, true); // see LevelLines.mqh — the panel stays foreground so it always wins
       ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, true);
-      ObjectSetInteger(m_chartId, name, OBJPROP_SELECTED, false);
       ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
      }
 

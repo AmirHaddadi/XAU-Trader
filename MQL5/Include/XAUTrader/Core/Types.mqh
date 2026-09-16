@@ -42,8 +42,9 @@ struct STradePlan
    double                entryPrice;    // ignored for PLACEMENT_MARKET (live price used)
    double                slPrice;
    double                tpPrice;
+   double                rrRatio;       // user-adjustable target reward:risk; drives auto TP while !tpUserSet
    bool                  slUserSet;     // false = SL still auto-tracks a sensible default
-   bool                  tpUserSet;     // false = TP still auto-tracks a 1:2 reward off SL
+   bool                  tpUserSet;     // false = TP still auto-tracks rrRatio off SL
 
    void Defaults()
      {
@@ -51,6 +52,7 @@ struct STradePlan
       riskValue  = 1.0;
       placement  = PLACEMENT_MARKET;
       direction  = TRADE_DIR_BUY;
+      rrRatio    = XAUT_DEFAULT_REWARD_RATIO;
       slUserSet  = false;
       tpUserSet  = false;
       entryPrice = 0.0;

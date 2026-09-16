@@ -44,6 +44,8 @@ enum ENUM_TXT
    TXT_CANCEL,
    TXT_CONFIRM_TITLE,
    TXT_CONFIRM_BODY,
+   TXT_CONFIRM,
+   TXT_START_HINT,
    TXT_SENDING,
    TXT_SENT_OK,
    TXT_SEND_FAILED,
@@ -125,6 +127,8 @@ private:
          case TXT_CANCEL:               return "انصراف";
          case TXT_CONFIRM_TITLE:        return "تایید معامله";
          case TXT_CONFIRM_BODY:         return "سفارش با این مشخصات ارسال شود؟";
+         case TXT_CONFIRM:              return "تایید نهایی";
+         case TXT_START_HINT:           return "با خرید یا فروش شروع کنید";
          case TXT_SENDING:              return "در حال ارسال...";
          case TXT_SENT_OK:              return "سفارش با موفقیت ثبت شد";
          case TXT_SEND_FAILED:          return "ارسال سفارش ناموفق بود";
@@ -192,6 +196,8 @@ private:
          case TXT_CANCEL:               return "Cancel";
          case TXT_CONFIRM_TITLE:        return "Confirm Trade";
          case TXT_CONFIRM_BODY:         return "Send order with these parameters?";
+         case TXT_CONFIRM:              return "Confirm";
+         case TXT_START_HINT:           return "Tap Buy or Sell to start";
          case TXT_SENDING:              return "Sending...";
          case TXT_SENT_OK:              return "Order placed successfully";
          case TXT_SEND_FAILED:          return "Order failed";

@@ -20,10 +20,13 @@
 #define XAUT_MIN_VISIBLE_PX  40   // header pixels that must always remain on-screen when dragging
 
 // Default distance (percent of price) for an auto-suggested stop, used only
-// until the user drags/types their own SL. Take-profit then auto-tracks a
-// 1:2 reward off whatever SL is active, until the user takes it over too.
-#define XAUT_DEFAULT_STOP_PERCENT 0.4
+// until the user drags their own SL. Take-profit then auto-tracks the
+// panel's R:R ratio off whatever SL is active, until the user drags TP too.
+#define XAUT_DEFAULT_STOP_PERCENT 0.1
 #define XAUT_DEFAULT_REWARD_RATIO 2.0
+#define XAUT_RR_MIN  1.0
+#define XAUT_RR_MAX  5.0
+#define XAUT_RR_STEP 0.5
 
 //--- Risk sizing mode: how the lot size is derived
 enum ENUM_RISK_MODE

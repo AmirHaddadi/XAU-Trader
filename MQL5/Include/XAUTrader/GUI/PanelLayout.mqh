@@ -42,9 +42,10 @@ struct SPanelRects
    SRect  tabLimit;
    SRect  tabStop;
 
-   SRect  fieldEntry;
-   SRect  fieldSL;
-   SRect  fieldTP;
+   SRect  rrRow;               // R:R stepper row ("-" / "1 : 2.0" / "+")
+   SRect  rrMinus;
+   SRect  rrPlus;
+   SRect  confirmArea;         // idle hint, or the pending trade's Entry/SL/TP summary while confirming
 
    SRect  rowLots;
    SRect  rowRisk;
@@ -109,12 +110,13 @@ struct SPanelRects
       r.tabStop   = Mk(pad + seg * 2, y, seg - 4, rowH);
       y += rowH + gap;
 
-      r.fieldEntry = Mk(pad, y, contentW, rowH);
-      y += rowH + 4;
-      r.fieldSL = Mk(pad, y, contentW, rowH);
-      y += rowH + 4;
-      r.fieldTP = Mk(pad, y, contentW, rowH);
+      r.rrRow   = Mk(pad, y, contentW, rowH);
+      r.rrMinus = Mk(pad, y, btn, rowH);
+      r.rrPlus  = Mk(pad + contentW - btn, y, btn, rowH);
       y += rowH + gap;
+
+      r.confirmArea = Mk(pad, y, contentW, 2 * rowH + 4);
+      y += 2 * rowH + 4 + gap;
 
       int rowH2 = (int)MathRound(20 * scale);
       r.rowLots   = Mk(pad, y, contentW, rowH2); y += rowH2;

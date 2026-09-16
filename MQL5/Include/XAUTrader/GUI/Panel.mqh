@@ -52,7 +52,7 @@ private:
 
    bool           m_settingsOpen;
    bool           m_positionsOpen;
-   string         m_focusField;     // "", "risk", "entry", "sl", "tp"
+   string         m_focusField;     // "" or "risk" — the only remaining typeable field
    string         m_editBuffer;
    bool           m_caretOn;
 
@@ -69,8 +69,12 @@ private:
    int            m_dragDX, m_dragDY;
    bool           m_dragSlider;
 
-   datetime       m_armBuyUntil;
-   datetime       m_armSellUntil;
+   // Planning/confirm state: lines stay hidden until the user actually starts
+   // configuring a trade (m_reviewing), and sending requires an explicit
+   // separate confirm step (m_confirming) rather than a timed re-click.
+   bool           m_reviewing;
+   bool           m_confirming;
+   ENUM_TRADE_DIR m_confirmDir;
 
    // All panel TEXT is drawn as native OBJ_LABEL chart objects, not via
    // CCanvas::TextOut. On this Wine install, CCanvas's off-screen GDI text
@@ -295,7 +299,8 @@ public:
      {
       m_created = false; m_settingsOpen = false; m_positionsOpen = false; m_focusField = "";
       m_dragPanel = false; m_dragSlider = false; m_caretOn = true;
-      m_armBuyUntil = 0; m_armSellUntil = 0; m_labelSeq = 0; m_labelCountPrev = 0;
+      m_reviewing = false; m_confirming = false; m_confirmDir = TRADE_DIR_BUY;
+      m_labelSeq = 0; m_labelCountPrev = 0;
       m_closeRequestTicket = 0; m_armCloseTicket = 0; m_armCloseUntil = 0;
       m_posRowCount = 0; m_posOverflowCount = 0;
      }
@@ -348,6 +353,11 @@ public:
    STradePlan     GetPlan()     const { return m_plan; }
    SAppSettings   GetSettings() const { return m_settings; }
    SRiskResult    GetResult()   const { return m_result; }
+
+   // Whether the planning Entry/SL/TP lines should be visible on the chart —
+   // only once the user has actually started configuring a trade, never by
+   // default on attach/reset (kept out of the way otherwise per feedback).
+   bool IsReviewing() const { return m_reviewing || m_confirming; }
 
    void SetPlan(const STradePlan &p) { m_plan = p; }
 
@@ -592,16 +602,12 @@ private:
       DrawSegment(m_rc.tabLimit,  L(TXT_PLACEMENT_LIMIT),  m_plan.placement == PLACEMENT_LIMIT,  pal);
       DrawSegment(m_rc.tabStop,   L(TXT_PLACEMENT_STOP),   m_plan.placement == PLACEMENT_STOP,   pal);
 
-      bool marketMode = (m_plan.placement == PLACEMENT_MARKET);
-      string entryShown = marketMode ? DoubleToString((m_plan.direction == TRADE_DIR_BUY) ? m_sym.ask : m_sym.bid, m_sym.digits)
-                                       : ((m_focusField == "entry") ? m_editBuffer : (m_plan.entryPrice > 0 ? DoubleToString(m_plan.entryPrice, m_sym.digits) : ""));
-      DrawField(m_rc.fieldEntry, L(TXT_ENTRY), entryShown, m_focusField == "entry", marketMode, pal, marketMode ? "" : "—");
+      DrawRRStepper(pal);
 
-      string slShown = (m_focusField == "sl") ? m_editBuffer : (m_plan.slPrice > 0 ? DoubleToString(m_plan.slPrice, m_sym.digits) : "");
-      DrawField(m_rc.fieldSL, L(TXT_SL), slShown, m_focusField == "sl", false, pal, "—");
-
-      string tpShown = (m_focusField == "tp") ? m_editBuffer : (m_plan.tpPrice > 0 ? DoubleToString(m_plan.tpPrice, m_sym.digits) : "");
-      DrawField(m_rc.fieldTP, L(TXT_TP), tpShown, m_focusField == "tp", false, pal, "—");
+      if(m_confirming)
+         DrawConfirmArea(pal);
+      else
+         DrawCentered(m_rc.confirmArea, L(TXT_START_HINT), pal.textMuted);
 
       DrawKV(m_rc.rowLots,   L(TXT_LOTS),          m_result.lots > 0 ? DoubleToString(m_result.lots, 2) : "—", pal, pal.textPrimary);
       DrawKV(m_rc.rowRisk,   L(TXT_RISK_AMOUNT),   m_result.riskMoney > 0 ? CXautUtils::FormatMoney(m_result.riskMoney, m_currency) : "—", pal, pal.sell);
@@ -615,12 +621,56 @@ private:
       FillRect(m_rc.banner, pal.cardAlt);
       DrawCentered(m_rc.banner, bannerTxt, bannerClr);
 
-      bool armedBuy  = (m_armBuyUntil  > TimeCurrent());
-      bool armedSell = (m_armSellUntil > TimeCurrent());
-      bool buyEnabled  = ok && (m_plan.direction == TRADE_DIR_BUY);
-      bool sellEnabled = ok && (m_plan.direction == TRADE_DIR_SELL);
-      DrawTradeButton(m_rc.btnBuy,  armedBuy  ? "?" : L(TXT_BUY),  pal.buy,  buyEnabled,  pal);
-      DrawTradeButton(m_rc.btnSell, armedSell ? "?" : L(TXT_SELL), pal.sell, sellEnabled, pal);
+      if(m_confirming)
+        {
+         bool sendOk = ok && (m_plan.direction == m_confirmDir);
+         color yesClr = (m_confirmDir == TRADE_DIR_BUY) ? pal.buy : pal.sell;
+         DrawTradeButton(m_rc.btnBuy,  L(TXT_CONFIRM), yesClr,      sendOk, pal);
+         DrawTradeButton(m_rc.btnSell, L(TXT_CANCEL),  pal.cardAlt, true,   pal);
+        }
+      else
+        {
+         bool buyEnabled  = ok && (m_plan.direction == TRADE_DIR_BUY);
+         bool sellEnabled = ok && (m_plan.direction == TRADE_DIR_SELL);
+         DrawTradeButton(m_rc.btnBuy,  L(TXT_BUY),  pal.buy,  buyEnabled,  pal);
+         DrawTradeButton(m_rc.btnSell, L(TXT_SELL), pal.sell, sellEnabled, pal);
+        }
+     }
+
+   void DrawRRStepper(const SPalette &pal)
+     {
+      FillRect(m_rc.rrRow, pal.cardAlt);
+      StrokeRect(m_rc.rrRow, pal.border);
+      DrawCentered(m_rc.rrMinus, "-", pal.textPrimary);
+      DrawCentered(m_rc.rrPlus,  "+", pal.textPrimary);
+      DrawCentered(m_rc.rrRow, L(TXT_RR) + "  1 : " + DoubleToString(m_plan.rrRatio, 1), pal.textPrimary);
+     }
+
+   void DrawConfirmArea(const SPalette &pal)
+     {
+      bool buy = (m_confirmDir == TRADE_DIR_BUY);
+      bool marketMode = (m_plan.placement == PLACEMENT_MARKET);
+      double entry = marketMode ? (buy ? m_sym.ask : m_sym.bid) : m_plan.entryPrice;
+      color sideClr = buy ? pal.buy : pal.sell;
+      bool rtl = RTL();
+      int x0 = rtl ? m_rc.confirmArea.x + m_rc.confirmArea.w : m_rc.confirmArea.x;
+      int cy1 = m_rc.confirmArea.y + (int)MathRound(6 * m_settings.uiScale);
+
+      string sideTxt = (buy ? L(TXT_BUY) : L(TXT_SELL)) + "  " +
+                        (m_result.lots > 0 ? DoubleToString(m_result.lots, 2) : "—") +
+                        " @ " + (entry > 0 ? DoubleToString(entry, m_sym.digits) : "—");
+      DrawLabel(x0, cy1, sideTxt, sideClr, !rtl);
+
+      int cy2 = cy1 + (int)MathRound(20 * m_settings.uiScale);
+      string slTxt = L(TXT_SL) + " " + (m_plan.slPrice > 0 ? DoubleToString(m_plan.slPrice, m_sym.digits) : "—");
+      string tpTxt = L(TXT_TP) + " " + (m_plan.tpPrice > 0 ? DoubleToString(m_plan.tpPrice, m_sym.digits) : "—");
+      DrawSplitLine(m_rc.confirmArea.x, cy2, m_rc.confirmArea.w, slTxt, pal.sell, tpTxt, pal.buy, rtl);
+
+      if(m_result.code != VALID_OK)
+        {
+         int cy3 = cy2 + (int)MathRound(20 * m_settings.uiScale);
+         DrawLabel(x0, cy3, ErrText(m_result.code), pal.warning, !rtl);
+        }
      }
 
    void DrawTradeButton(const SRect &r, const string label, const color base, const bool enabled, const SPalette &pal)
@@ -718,9 +768,6 @@ private:
         {
          if(CXautUtils::IsFinitePositive(v)) m_plan.riskValue = v;
         }
-      else if(m_focusField == "entry") m_plan.entryPrice = v;
-      else if(m_focusField == "sl")    { m_plan.slPrice = v; m_plan.slUserSet = true; }
-      else if(m_focusField == "tp")    { m_plan.tpPrice = v; m_plan.tpUserSet = true; }
       m_focusField = "";
       m_editBuffer = "";
      }
@@ -835,24 +882,65 @@ private:
 
    ENUM_PANEL_ACTION OnClickTrading(const int lx, const int ly)
      {
-      if(m_rc.tabRiskPct.Contains(lx, ly))    { CommitFocusedField(); m_plan.riskMode = RISK_MODE_PERCENT_BALANCE; Draw(); return PANEL_ACTION_REDRAW_LINES; }
-      if(m_rc.tabRiskEquity.Contains(lx, ly)) { CommitFocusedField(); m_plan.riskMode = RISK_MODE_PERCENT_EQUITY;  Draw(); return PANEL_ACTION_REDRAW_LINES; }
-      if(m_rc.tabRiskFixed.Contains(lx, ly))  { CommitFocusedField(); m_plan.riskMode = RISK_MODE_FIXED_MONEY;     Draw(); return PANEL_ACTION_REDRAW_LINES; }
+      // While a confirm bar is open, only its own Confirm/Cancel buttons are
+      // live — everything else is frozen so the summary being reviewed can't
+      // silently drift out from under the user (e.g. risk% changing the lot
+      // size shown) before they decide.
+      if(m_confirming)
+        {
+         bool sendOk = (m_result.code == VALID_OK) && (m_plan.direction == m_confirmDir);
+         if(m_rc.btnBuy.Contains(lx, ly))
+           {
+            if(!sendOk) return PANEL_ACTION_NONE;
+            ENUM_TRADE_DIR dir = m_confirmDir;
+            m_confirming = false;
+            m_reviewing = false; // trade is going out — collapse the planning lines
+            Draw();
+            return (dir == TRADE_DIR_BUY) ? PANEL_ACTION_SEND_BUY : PANEL_ACTION_SEND_SELL;
+           }
+         if(m_rc.btnSell.Contains(lx, ly))
+           {
+            m_confirming = false;
+            Draw();
+            return PANEL_ACTION_REDRAW_LINES;
+           }
+         return PANEL_ACTION_NONE;
+        }
 
-      if(m_rc.tabMarket.Contains(lx, ly)) { CommitFocusedField(); m_plan.placement = PLACEMENT_MARKET; Draw(); return PANEL_ACTION_REDRAW_LINES; }
-      if(m_rc.tabLimit.Contains(lx, ly))  { CommitFocusedField(); m_plan.placement = PLACEMENT_LIMIT;  Draw(); return PANEL_ACTION_REDRAW_LINES; }
-      if(m_rc.tabStop.Contains(lx, ly))   { CommitFocusedField(); m_plan.placement = PLACEMENT_STOP;   Draw(); return PANEL_ACTION_REDRAW_LINES; }
+      if(m_rc.tabRiskPct.Contains(lx, ly))    { CommitFocusedField(); m_plan.riskMode = RISK_MODE_PERCENT_BALANCE; m_reviewing = true; Draw(); return PANEL_ACTION_REDRAW_LINES; }
+      if(m_rc.tabRiskEquity.Contains(lx, ly)) { CommitFocusedField(); m_plan.riskMode = RISK_MODE_PERCENT_EQUITY;  m_reviewing = true; Draw(); return PANEL_ACTION_REDRAW_LINES; }
+      if(m_rc.tabRiskFixed.Contains(lx, ly))  { CommitFocusedField(); m_plan.riskMode = RISK_MODE_FIXED_MONEY;     m_reviewing = true; Draw(); return PANEL_ACTION_REDRAW_LINES; }
 
-      if(m_rc.fieldRiskValue.Contains(lx, ly)) { BeginFocus("risk", m_plan.riskValue); Draw(); return PANEL_ACTION_NONE; }
-      if(m_rc.fieldEntry.Contains(lx, ly) && m_plan.placement != PLACEMENT_MARKET)
-        { BeginFocus("entry", m_plan.entryPrice); Draw(); return PANEL_ACTION_NONE; }
-      if(m_rc.fieldSL.Contains(lx, ly)) { BeginFocus("sl", m_plan.slPrice); Draw(); return PANEL_ACTION_NONE; }
-      if(m_rc.fieldTP.Contains(lx, ly)) { BeginFocus("tp", m_plan.tpPrice); Draw(); return PANEL_ACTION_NONE; }
+      if(m_rc.tabMarket.Contains(lx, ly)) { CommitFocusedField(); m_plan.placement = PLACEMENT_MARKET; m_reviewing = true; Draw(); return PANEL_ACTION_REDRAW_LINES; }
+      if(m_rc.tabLimit.Contains(lx, ly))  { CommitFocusedField(); m_plan.placement = PLACEMENT_LIMIT;  m_reviewing = true; Draw(); return PANEL_ACTION_REDRAW_LINES; }
+      if(m_rc.tabStop.Contains(lx, ly))   { CommitFocusedField(); m_plan.placement = PLACEMENT_STOP;   m_reviewing = true; Draw(); return PANEL_ACTION_REDRAW_LINES; }
+
+      if(m_rc.fieldRiskValue.Contains(lx, ly)) { BeginFocus("risk", m_plan.riskValue); m_reviewing = true; Draw(); return PANEL_ACTION_NONE; }
+
+      if(m_rc.rrMinus.Contains(lx, ly))
+        {
+         CommitFocusedField();
+         m_plan.rrRatio = MathMax(XAUT_RR_MIN, m_plan.rrRatio - XAUT_RR_STEP);
+         m_plan.tpUserSet = false; // ratio is the source of truth again until TP is dragged directly
+         m_reviewing = true;
+         Draw();
+         return PANEL_ACTION_REDRAW_LINES;
+        }
+      if(m_rc.rrPlus.Contains(lx, ly))
+        {
+         CommitFocusedField();
+         m_plan.rrRatio = MathMin(XAUT_RR_MAX, m_plan.rrRatio + XAUT_RR_STEP);
+         m_plan.tpUserSet = false;
+         m_reviewing = true;
+         Draw();
+         return PANEL_ACTION_REDRAW_LINES;
+        }
 
       if(m_rc.sliderRisk.Contains(lx, ly))
         {
          CommitFocusedField();
          m_dragSlider = true;
+         m_reviewing = true;
          ApplySliderX(lx);
          return PANEL_ACTION_REDRAW_LINES;
         }
@@ -863,28 +951,20 @@ private:
       if(m_rc.btnBuy.Contains(lx, ly) && buyEnabled)
         {
          CommitFocusedField();
-         if(m_armBuyUntil > TimeCurrent())
-           {
-            m_armBuyUntil = 0;
-            return PANEL_ACTION_SEND_BUY;
-           }
-         m_armBuyUntil = TimeCurrent() + XAUT_ARM_SECONDS;
-         m_armSellUntil = 0;
+         m_confirming = true;
+         m_confirmDir = TRADE_DIR_BUY;
+         m_reviewing = true;
          Draw();
-         return PANEL_ACTION_NONE;
+         return PANEL_ACTION_REDRAW_LINES;
         }
       if(m_rc.btnSell.Contains(lx, ly) && sellEnabled)
         {
          CommitFocusedField();
-         if(m_armSellUntil > TimeCurrent())
-           {
-            m_armSellUntil = 0;
-            return PANEL_ACTION_SEND_SELL;
-           }
-         m_armSellUntil = TimeCurrent() + XAUT_ARM_SECONDS;
-         m_armBuyUntil = 0;
+         m_confirming = true;
+         m_confirmDir = TRADE_DIR_SELL;
+         m_reviewing = true;
          Draw();
-         return PANEL_ACTION_NONE;
+         return PANEL_ACTION_REDRAW_LINES;
         }
 
       if(m_focusField != "") { CommitFocusedField(); Draw(); return PANEL_ACTION_REDRAW_LINES; }
@@ -980,8 +1060,6 @@ private:
 public:
    void ClearArmedState()
      {
-      if(m_armBuyUntil != 0 && m_armBuyUntil <= TimeCurrent())  { m_armBuyUntil = 0; Draw(); }
-      if(m_armSellUntil != 0 && m_armSellUntil <= TimeCurrent()) { m_armSellUntil = 0; Draw(); }
       if(m_armCloseTicket != 0 && m_armCloseUntil <= TimeCurrent()) { m_armCloseTicket = 0; Draw(); }
      }
   };
