@@ -205,6 +205,21 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          else if(which == "tp")   { plan.tpPrice = price; plan.tpUserSet = true; }
          g_panel.SetPlan(plan);
          Recompute();
+         return;
+        }
+
+      // The panel bitmap is selectable (needed so a click on it doesn't
+      // fall through to the chart's own click-drag-to-pan/scroll), which
+      // means MT5 will also try to natively drag it on ANY click-drag
+      // inside it — including e.g. the risk slider, which isn't supposed
+      // to move the panel at all. We do all our own dragging manually via
+      // mouse-move tracking, so any native drag that isn't our own
+      // in-progress header drag gets reverted immediately.
+      if(sparam == XAUT_PANEL_OBJ)
+        {
+         if(!g_panel.IsDraggingPanel())
+            g_panel.SnapBackPosition();
+         return;
         }
       return;
      }

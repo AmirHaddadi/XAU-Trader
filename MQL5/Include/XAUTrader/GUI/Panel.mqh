@@ -179,6 +179,7 @@ private:
          ObjectSetInteger(m_chartId, name, OBJPROP_SELECTABLE, false);
          ObjectSetInteger(m_chartId, name, OBJPROP_HIDDEN, true);
          ObjectSetInteger(m_chartId, name, OBJPROP_BACK, false);
+         ObjectSetInteger(m_chartId, name, OBJPROP_ZORDER, 101); // above the panel bitmap itself
         }
       ObjectSetInteger(m_chartId, name, OBJPROP_XDISTANCE, m_settings.panelX + x);
       ObjectSetInteger(m_chartId, name, OBJPROP_YDISTANCE, m_settings.panelY + y);
@@ -315,9 +316,20 @@ public:
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_CORNER, CORNER_LEFT_UPPER);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_XDISTANCE, m_settings.panelX);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_YDISTANCE, m_settings.panelY);
-      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTABLE, false);
+      // Selectable so a click anywhere on the panel is captured by this
+      // object instead of falling through to the chart's own click-drag-to-
+      // pan/scroll handling (which is what was happening before — dragging
+      // the panel moved the chart, and dragging the slider scrolled it).
+      // We still do all *our* dragging manually via mouse-move tracking, so
+      // native object-drag is immediately reverted in SnapBackPosition() —
+      // see the CHARTEVENT_OBJECT_DRAG handler in the EA.
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTABLE, true);
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTED, false);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_HIDDEN, true);
       ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_BACK, false);
+      // High z-order so the panel always draws above the chart-native
+      // Entry/SL/TP lines, which otherwise could render in front of it.
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_ZORDER, 100);
 
       m_plan.Defaults();
       m_result.Reset();
@@ -365,6 +377,22 @@ public:
      }
 
    void ToggleCaret() { m_caretOn = !m_caretOn; }
+
+   //--- true while the header (title bar) is being manually dragged by our
+   //--- own mouse-move tracking — see the note on OBJPROP_SELECTABLE above.
+   bool IsDraggingPanel() const { return m_dragPanel; }
+
+   //--- Undoes MT5's native object-drag, which fires the moment the now-
+   //--- selectable bitmap is clicked and moved for ANY reason (e.g. the risk
+   //--- slider) — not just an intentional header drag, which we already
+   //--- apply ourselves. Called by the EA on CHARTEVENT_OBJECT_DRAG.
+   void SnapBackPosition()
+     {
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_XDISTANCE, m_settings.panelX);
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_YDISTANCE, m_settings.panelY);
+      ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTED, false);
+      ChartRedraw(m_chartId);
+     }
 
    //--- Rebuilds the geometry cache (call after scale/collapse changes) and repositions the bitmap.
    void ApplySettingsGeometry()
@@ -884,7 +912,12 @@ private:
       bool leftDown = (flags & 1) == 1;
       if(!leftDown)
         {
-         if(m_dragPanel) { m_dragPanel = false; return PANEL_ACTION_SETTINGS_CHANGED; }
+         if(m_dragPanel)
+           {
+            m_dragPanel = false;
+            ObjectSetInteger(m_chartId, XAUT_PANEL_OBJ, OBJPROP_SELECTED, false);
+            return PANEL_ACTION_SETTINGS_CHANGED;
+           }
          if(m_dragSlider) { m_dragSlider = false; return PANEL_ACTION_REDRAW_LINES; }
          return PANEL_ACTION_NONE;
         }
