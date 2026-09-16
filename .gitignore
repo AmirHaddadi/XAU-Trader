@@ -10,6 +10,9 @@ MQL5/Logs/
 # Per-user runtime state written by the EA at runtime (not source)
 MQL5/Files/XAUTrader/
 
+# Ad-hoc debug screenshots dropped in the project root during testing
+/Screenshot*.png
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

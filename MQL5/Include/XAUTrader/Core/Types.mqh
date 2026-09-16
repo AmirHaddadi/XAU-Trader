@@ -19,7 +19,11 @@ struct SAppSettings
    void Defaults()
      {
       theme       = THEME_DARK;
-      lang        = LANG_FA;
+      // Forced to English for now: Vazir/Farsi text rendered via a plain
+      // TextOut call comes out blank — Arabic-script glyphs need real
+      // shaping (joined forms) that the canvas library doesn't do on its
+      // own. Re-enable LANG_FA as the default once that's solved.
+      lang        = LANG_EN;
       uiScale     = 1.0;
       panelX      = 16;
       panelY      = 16;
