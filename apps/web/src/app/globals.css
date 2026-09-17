@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+/*
+ * Palette ported 1:1 from MQL5/Include/XAUTrader/GUI/Theme.mqh (CTheme::Get).
+ * dark = OLED trading terminal, light = banking/premium-gold — same design
+ * language as the native panel; this migration doesn't imply a redesign.
+ * Theme is an explicit in-app setting (see SAppSettings.theme), not the OS
+ * preference, so switching is done via [data-theme] rather than
+ * prefers-color-scheme.
+ */
+:root {
+  --color-background: #020617;
+  --color-card: #0e1223;
+  --color-card-alt: #1a1e2f;
+  --color-header: #0f172a;
+  --color-border: #334155;
+  --color-text-primary: #f8fafc;
+  --color-text-muted: #94a3b8;
+  --color-accent-gold: #d4af37;
+  --color-buy: #22c55e;
+  --color-sell: #ef4444;
+  --color-warning: #f59e0b;
+}
+
+:root[data-theme="light"] {
+  --color-background: #f8fafc;
+  --color-card: #ffffff;
+  --color-card-alt: #e8ecf1;
+  --color-header: #0f172a;
+  --color-border: #e2e8f0;
+  --color-text-primary: #020617;
+  --color-text-muted: #475569;
+  --color-accent-gold: #a16207;
+  --color-buy: #16a34a;
+  --color-sell: #dc2626;
+  --color-warning: #ca8a04;
+}
+
+@theme inline {
+  --color-background: var(--color-background);
+  --color-card: var(--color-card);
+  --color-card-alt: var(--color-card-alt);
+  --color-header: var(--color-header);
+  --color-border: var(--color-border);
+  --color-text-primary: var(--color-text-primary);
+  --color-text-muted: var(--color-text-muted);
+  --color-accent-gold: var(--color-accent-gold);
+  --color-buy: var(--color-buy);
+  --color-sell: var(--color-sell);
+  --color-warning: var(--color-warning);
+  --font-sans: var(--font-sans);
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text-primary);
+}

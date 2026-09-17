@@ -23,9 +23,16 @@
 #include <XAUTrader/GUI/Theme.mqh>
 #include <XAUTrader/GUI/Panel.mqh>
 #include <XAUTrader/Config/SettingsStore.mqh>
+#include <XAUTrader/Bridge/SocketClient.mqh>
+#include <XAUTrader/Bridge/Protocol.mqh>
+#include <XAUTrader/Bridge/Handlers.mqh>
 
-input ulong  InpMagicNumber       = 574839201;  // Magic number for orders placed by this panel
-input int    InpDeviationPoints   = 20;         // Max price deviation (points) for market orders
+#define XAUT_EA_VERSION "1.11" // kept in sync with #property version above; reported in the bridge "hello" handshake
+
+input ulong   InpMagicNumber       = 574839201;  // Magic number for orders placed by this panel
+input int     InpDeviationPoints   = 20;         // Max price deviation (points) for market orders
+input string  InpBridgeHost        = "127.0.0.1"; // Local web-platform bridge host (never change unless the bridge itself is remote)
+input int     InpBridgePort        = 9443;        // Local web-platform bridge TCP port — must match apps/bridge's EA_TCP_PORT
 
 CPanel          g_panel;
 COrderManager   g_orderMgr;
@@ -34,6 +41,19 @@ CPositionLines  g_posLines;
 SAppSettings    g_settings;
 string          g_currency;
 bool            g_ready = false;
+
+// Additive, parallel to the native panel above — Phase A of the web
+// re-platform (see Evolved-FullStack-NewStack.md / the approved plan). The
+// bridge socket pushes live data out for a browser dashboard to mirror; it
+// does not yet replace or touch anything the native panel does.
+CSocketClient   g_bridge;
+bool            g_bridgeWasConnected = false;
+
+#define XAUT_TICK_PUSH_MIN_MS 150
+ulong g_lastTickPushMs = 0;
+
+#define XAUT_BRIDGE_STATE_MIN_MS 1000
+ulong g_lastBridgeStateMs = 0;
 
 // Everything expensive (canvas repaint, ~30+ label object writes, the
 // chart price-line objects, ChartRedraw()) used to fire from three
@@ -80,6 +100,9 @@ int OnInit()
    ChartSetInteger(ChartID(), CHART_EVENT_MOUSE_MOVE, true);
    EventSetMillisecondTimer(250);
 
+   g_bridge.Init(InpBridgeHost, InpBridgePort);
+   g_bridge.TryConnect(); // fine if this fails — OnTimer retries; the bridge may just not be running yet (dev-only in Phase A)
+
    g_ready = true;
    // Unconditional on attach/reinit (timeframe switch, template reload,
    // terminal restart...) so an already-open position is picked back up
@@ -96,6 +119,7 @@ void OnDeinit(const int reason)
    EventKillTimer();
    ChartSetInteger(0, CHART_MOUSE_SCROLL, true); // never leave chart panning stuck off
    CSettingsStore::Save(g_panel.GetSettings());
+   g_bridge.Disconnect();
    g_lines.Clear();
    g_panel.Destroy();
    // Position lines represent real, still-open trades — only a true
@@ -114,6 +138,7 @@ void OnTick()
    if(!g_ready) return;
    UpdateDataThrottled();
    ScanPositionsDataThrottled();
+   PushBridgeTickThrottled();
   }
 
 //+------------------------------------------------------------------+
@@ -126,6 +151,7 @@ void OnTimer()
    ScanPositionsDataThrottled();
    FlushPendingPositionModify();
    RenderAll(); // the one place a full repaint actually happens — fixed 4/sec ceiling
+   BridgeMaintain();
   }
 
 //+------------------------------------------------------------------+
@@ -312,6 +338,11 @@ void ScanAndRenderPositions()
   {
    ScanPositionsData();
    RenderAll();
+   // Instant feedback for the web mirror too — same reasoning as the native
+   // repaint above: don't make a just-placed/closed trade wait out the
+   // regular 1000ms bridge push throttle.
+   if(g_bridge.IsConnected())
+      g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
   }
 
 //+------------------------------------------------------------------+
@@ -438,5 +469,70 @@ void SendFromPanel(const ENUM_TRADE_DIR dir)
 
    ScanAndRenderPositions();
    Recompute();
+  }
+
+//+------------------------------------------------------------------+
+//| Web-platform bridge (Phase A: read-only push — hello/tick/account/  |
+//| symbol/positions out, bars.request in). Fully additive: none of     |
+//| this touches the native panel's data or repaint path above.         |
+//+------------------------------------------------------------------+
+void BridgeMaintain()
+  {
+   g_bridge.TryConnect();
+
+   bool connected = g_bridge.IsConnected();
+   if(connected && !g_bridgeWasConnected)
+      SendBridgeHello();
+   g_bridgeWasConnected = connected;
+
+   if(!connected)
+      return;
+
+   PushBridgeStateThrottled();
+   PollBridgeInbound();
+  }
+
+void SendBridgeHello()
+  {
+   long account = AccountInfoInteger(ACCOUNT_LOGIN);
+   string broker = AccountInfoString(ACCOUNT_COMPANY);
+   g_bridge.SendLine(CProtocol::BuildHello(account, broker, _Symbol, (long)InpMagicNumber, XAUT_EA_VERSION));
+  }
+
+void PushBridgeTickThrottled()
+  {
+   if(!g_bridge.IsConnected() || !g_lastSym.valid)
+      return;
+   ulong now = GetTickCount64();
+   if(now - g_lastTickPushMs < XAUT_TICK_PUSH_MIN_MS)
+      return;
+   g_lastTickPushMs = now;
+   g_bridge.SendLine(CProtocol::BuildTick(_Symbol, g_lastSym.bid, g_lastSym.ask, TimeCurrent()));
+  }
+
+void PushBridgeStateThrottled()
+  {
+   ulong now = GetTickCount64();
+   if(now - g_lastBridgeStateMs < XAUT_BRIDGE_STATE_MIN_MS)
+      return;
+   g_lastBridgeStateMs = now;
+
+   if(g_lastSym.valid)
+      g_bridge.SendLine(CProtocol::BuildSymbol(g_lastSym));
+
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
+   g_bridge.SendLine(CProtocol::BuildAccount(balance, equity, freeMargin, g_currency));
+
+   g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
+  }
+
+void PollBridgeInbound()
+  {
+   string lines[];
+   int count = g_bridge.PollLines(lines);
+   for(int i = 0; i < count; i++)
+      CBridgeHandlers::Dispatch(g_bridge, lines[i]);
   }
 //+------------------------------------------------------------------+

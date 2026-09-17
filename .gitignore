@@ -17,3 +17,19 @@ MQL5/Files/XAUTrader/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Node/TypeScript workspace (apps/web, apps/bridge, packages/protocol)
+node_modules/
+dist/
+.next/
+*.tsbuildinfo
+
+# Bridge runtime state — local SQLite journal/settings DB, not source
+apps/bridge/data/
+
+# Deployment-level secrets/config, never committed — see .env.example
+.env
+.env.local
+
+# pkg/Windows-exe packaging output (Phase D)
+build/package-windows/out/
