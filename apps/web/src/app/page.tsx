@@ -191,57 +191,65 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
         tick={tick}
       />
 
-      {tab === "dashboard" && (
-        <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px] gap-3">
-          <div className="flex min-h-0 flex-col rounded-lg border border-border bg-card">
-            <ChartToolbar
-              timeframe={timeframe}
-              onTimeframeChange={handleTimeframeChange}
-              gridVisible={gridVisible}
-              onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
-              activeTool={activeDrawingTool}
-              onToolChange={setActiveDrawingTool}
-              hasSelection={selectedDrawingId !== null}
-              onDeleteSelected={handleDeleteSelectedDrawing}
-            />
-            <div className="min-h-0 flex-1 p-2">
-              <LiveChart
-                bars={bars}
-                liveBar={liveBar}
-                timeframe={timeframe}
-                gridVisible={gridVisible}
-                theme={settings?.theme ?? "dark"}
-                lines={lines}
-                onLineDrag={handleLineDrag}
-                onLineDragEnd={handleLineDrag}
-                drawings={drawings}
-                activeDrawingTool={activeDrawingTool}
-                onDrawingCreated={handleDrawingCreated}
-                onDrawingSelectedChange={setSelectedDrawingId}
-              />
-            </div>
-          </div>
-          <MoneyPanel
-            plan={plan}
-            reviewing={reviewing}
-            riskResult={riskResult}
-            riskError={riskError}
-            busy={busy}
-            currency={account?.currency}
-            digits={digits}
-            onRiskModeChange={setRiskMode}
-            onRiskValueChange={setRiskValue}
-            onPlacementChange={setPlacement}
-            onRrRatioChange={setRrRatio}
-            onBuy={() => startReview("buy")}
-            onSell={() => startReview("sell")}
-            onConfirm={() => void confirmOrder()}
-            onCancel={cancelReview}
+      {/* Always mounted, hidden via CSS rather than conditionally rendered —
+          unmounting used to destroy and recreate the whole lightweight-charts
+          instance on every tab switch. Since bar.update keeps streaming
+          regardless of which tab is visible, a remount replayed only the
+          *current* liveBar against a stale initial `bars` snapshot,
+          silently dropping every candle that closed while away (reported
+          live). Keeping it mounted means series.update() keeps applying
+          every tick in the background, so nothing is ever missed. */}
+      <div className={`grid min-h-0 flex-1 grid-cols-[1fr_320px] gap-3 ${tab === "dashboard" ? "" : "hidden"}`}>
+        <div className="flex min-h-0 flex-col rounded-lg border border-border bg-card">
+          <ChartToolbar
+            timeframe={timeframe}
+            onTimeframeChange={handleTimeframeChange}
+            gridVisible={gridVisible}
+            onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
+            activeTool={activeDrawingTool}
+            onToolChange={setActiveDrawingTool}
+            hasSelection={selectedDrawingId !== null}
+            onDeleteSelected={handleDeleteSelectedDrawing}
           />
+          <div className="min-h-0 flex-1 p-2">
+            <LiveChart
+              bars={bars}
+              liveBar={liveBar}
+              timeframe={timeframe}
+              gridVisible={gridVisible}
+              theme={settings?.theme ?? "dark"}
+              lines={lines}
+              onLineDrag={handleLineDrag}
+              onLineDragEnd={handleLineDrag}
+              drawings={drawings}
+              activeDrawingTool={activeDrawingTool}
+              onDrawingCreated={handleDrawingCreated}
+              onDrawingSelectedChange={setSelectedDrawingId}
+            />
+          </div>
         </div>
-      )}
+        <MoneyPanel
+          plan={plan}
+          reviewing={reviewing}
+          riskResult={riskResult}
+          riskError={riskError}
+          busy={busy}
+          currency={account?.currency}
+          digits={digits}
+          onRiskModeChange={setRiskMode}
+          onRiskValueChange={setRiskValue}
+          onPlacementChange={setPlacement}
+          onRrRatioChange={setRrRatio}
+          onBuy={() => startReview("buy")}
+          onSell={() => startReview("sell")}
+          onConfirm={() => void confirmOrder()}
+          onCancel={cancelReview}
+        />
+      </div>
 
-      {tab === "dashboard" && <PositionsBar positions={positions} symbol={symbol} onClose={(ticket) => void closePosition(ticket)} />}
+      <div className={tab === "dashboard" ? "" : "hidden"}>
+        <PositionsBar positions={positions} symbol={symbol} onClose={(ticket) => void closePosition(ticket)} />
+      </div>
 
       {tab === "journal" && (
         <Journal

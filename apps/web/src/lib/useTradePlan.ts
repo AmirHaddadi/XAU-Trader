@@ -84,12 +84,17 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
           const defDist = refEntry * (XAUT_DEFAULT_STOP_PERCENT / 100);
           const minDist = symbol.stopsLevelPoints > 0 ? symbol.stopsLevelPoints * symbol.point * 1.5 : 0;
           const dist = Math.max(defDist, minDist);
-          slPrice = refEntry - dist; // buy-bias default, mirrors the BUY default direction
+          // Bug fix (reported live): this used to always subtract — i.e.
+          // always placed SL *below* entry — regardless of which button
+          // was clicked, so a Sell always previewed with a Buy-shaped
+          // SL/TP (SL below, TP above) even though `prev.direction` was
+          // already correctly "sell". Must follow the chosen direction,
+          // not assume buy.
+          slPrice = isBuy ? refEntry - dist : refEntry + dist;
         }
         if (!prev.tpUserSet && slPrice > 0) {
           const dist = Math.abs(refEntry - slPrice);
-          const buyBias = slPrice < refEntry;
-          tpPrice = buyBias ? refEntry + prev.rrRatio * dist : refEntry - prev.rrRatio * dist;
+          tpPrice = isBuy ? refEntry + prev.rrRatio * dist : refEntry - prev.rrRatio * dist;
         }
       }
 

@@ -7,6 +7,7 @@ import { PriceLineDragController, type DraggableLine } from "@/lib/priceLineDrag
 import { DrawingLayerController } from "@/lib/drawingTools";
 import { readChartPalette } from "@/lib/theme";
 import { useCandleCountdown } from "@/lib/useCandleCountdown";
+import { revealBarsAnimated } from "@/lib/chartReveal";
 
 interface LiveChartProps {
   bars: Bar[];
@@ -134,12 +135,14 @@ export function LiveChart({
 
   // Full reload only — timeframe switch or initial history. NOT called for
   // live ticks (see `liveBar` below), so panning/zoom survives streaming.
+  // Now also the chart's only "loading" moment (it stays mounted across tab
+  // switches — see page.tsx — so this genuinely only fires on a real
+  // load/timeframe change), which is what makes a premium staged reveal
+  // appropriate here instead of distracting on every tab visit.
   useEffect(() => {
-    if (!seriesRef.current || bars.length === 0) return;
-    seriesRef.current.setData(
-      bars.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close })),
-    );
-    chartRef.current?.timeScale().fitContent();
+    if (!chartRef.current || !seriesRef.current || bars.length === 0) return;
+    const cancel = revealBarsAnimated(chartRef.current, seriesRef.current, bars);
+    return cancel;
   }, [bars]);
 
   // Incremental — the actual "live" part of the chart.
