@@ -16,7 +16,16 @@ import { MoneyPanel } from "@/components/MoneyPanel";
 import { Journal } from "@/components/Journal";
 import { SettingsPanel } from "@/components/SettingsPanel";
 
-const DEFAULT_BAR_COUNT = 500;
+// Initial load: aggressive on purpose — this is a local, single-user,
+// resource-unconstrained setup (no network latency to a remote history
+// server, CopyRates reads straight out of MT5's local history cache), so
+// there's no reason to start users off with a shallow 500-bar window like a
+// hosted charting product would. Further history beyond this loads
+// progressively (see HISTORY_PAGE_SIZE / LiveChart's pan-to-edge detection)
+// rather than requesting everything in one shot, so the reveal stays a
+// deliberate animated build-out instead of a multi-second blocking fetch.
+const DEFAULT_BAR_COUNT = 5000;
+const HISTORY_PAGE_SIZE = 2000;
 type Tab = "dashboard" | "journal" | "settings";
 
 export default function DashboardPage() {
@@ -53,6 +62,9 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     positions,
     bars,
     liveBar,
+    hasMoreHistory,
+    loadingOlderBars,
+    barsAppendedOlderCount,
     lastError,
     settings,
     journalDeals,
@@ -162,6 +174,11 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     }
   }
 
+  function handleRequestOlderBars() {
+    if (!symbol?.valid) return;
+    requestBars(symbol.symbol, timeframe, HISTORY_PAGE_SIZE, bars.length);
+  }
+
   function handleTimeframeChange(tf: Timeframe) {
     if (tf === timeframe) return;
     requestedFor.current = undefined; // force the effect above to re-request for the new timeframe
@@ -215,6 +232,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
           <div className="min-h-0 flex-1 p-2">
             <LiveChart
               bars={bars}
+              barsAppendedOlderCount={barsAppendedOlderCount}
               liveBar={liveBar}
               timeframe={timeframe}
               gridVisible={gridVisible}
@@ -226,6 +244,9 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
               activeDrawingTool={activeDrawingTool}
               onDrawingCreated={handleDrawingCreated}
               onDrawingSelectedChange={setSelectedDrawingId}
+              hasMoreHistory={hasMoreHistory}
+              loadingOlderBars={loadingOlderBars}
+              onRequestOlderBars={handleRequestOlderBars}
             />
           </div>
         </div>

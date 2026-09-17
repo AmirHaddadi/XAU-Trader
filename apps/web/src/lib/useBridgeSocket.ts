@@ -44,6 +44,17 @@ export interface BridgeState {
   // user's zoom/pan on every update (the root cause of the chart feeling
   // "stuck"/unusable — see Fix-Bugs.md item 9).
   liveBar: Bar | undefined;
+  // True until a history page request (offset > 0) comes back with nothing
+  // new — i.e. CopyRates has genuinely run out of bars for this broker/
+  // symbol/timeframe. Drives when LiveChart stops requesting more as the
+  // user pans back.
+  hasMoreHistory: boolean;
+  loadingOlderBars: boolean;
+  // How many bars at the front of `bars` were just prepended by a history
+  // page (0 after a fresh load/timeframe switch). LiveChart reads this to
+  // pick the edge-preserving reveal animation over the full-dataset one —
+  // see lib/chartReveal.ts.
+  barsAppendedOlderCount: number;
   lastError: string | undefined;
   settings: Settings | undefined;
   journalDeals: ClosedDeal[];
@@ -60,6 +71,9 @@ const initialState: BridgeState = {
   bars: [],
   barsTimeframe: undefined,
   liveBar: undefined,
+  hasMoreHistory: true,
+  loadingOlderBars: false,
+  barsAppendedOlderCount: 0,
   lastError: undefined,
   settings: undefined,
   journalDeals: [],
@@ -147,7 +161,33 @@ export function useBridgeSocket() {
           setState((s) => ({ ...s, positions: msg.payload.positions }));
           return;
         case "bars.data":
-          setState((s) => ({ ...s, bars: msg.payload.bars, barsTimeframe: msg.payload.timeframe, liveBar: undefined }));
+          setState((s) => {
+            if (msg.payload.offset === 0) {
+              // Initial load / refresh / timeframe switch — full replace.
+              return {
+                ...s,
+                bars: msg.payload.bars,
+                barsTimeframe: msg.payload.timeframe,
+                liveBar: undefined,
+                hasMoreHistory: true,
+                loadingOlderBars: false,
+                barsAppendedOlderCount: 0,
+              };
+            }
+            // A history page requested as the user panned back — prepend,
+            // deduping on the (rare) chance the boundary bar was returned
+            // by both requests.
+            if (msg.payload.timeframe !== s.barsTimeframe) return { ...s, loadingOlderBars: false };
+            const existingTimes = new Set(s.bars.map((b) => b.time));
+            const older = msg.payload.bars.filter((b) => !existingTimes.has(b.time));
+            return {
+              ...s,
+              bars: [...older, ...s.bars],
+              hasMoreHistory: msg.payload.bars.length > 0,
+              loadingOlderBars: false,
+              barsAppendedOlderCount: older.length,
+            };
+          });
           return;
         case "bar.update":
           setState((s) => (s.barsTimeframe === msg.payload.timeframe ? { ...s, liveBar: msg.payload.bar } : s));
@@ -189,8 +229,9 @@ export function useBridgeSocket() {
   }, []);
 
   const requestBars = useCallback(
-    (symbol: string, timeframe: string, count: number) => {
-      send({ type: "bars.request", payload: { symbol, timeframe, count } });
+    (symbol: string, timeframe: string, count: number, offset = 0) => {
+      if (offset > 0) setState((s) => ({ ...s, loadingOlderBars: true }));
+      send({ type: "bars.request", payload: { symbol, timeframe, count, offset } });
     },
     [send],
   );

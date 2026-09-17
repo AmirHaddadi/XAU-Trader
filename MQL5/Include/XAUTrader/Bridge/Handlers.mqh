@@ -181,21 +181,31 @@ private:
       string symbol    = CProtocol::ReadBarsRequestSymbol(line);
       string tfString  = CProtocol::ReadBarsRequestTimeframe(line);
       int    count     = CProtocol::ReadBarsRequestCount(line);
+      int    offset    = CProtocol::ReadBarsRequestOffset(line);
       ENUM_TIMEFRAMES tf = TimeframeFromString(tfString);
 
-      // Every bars.request is treated as "the web chart now wants live
-      // updates for this symbol/timeframe" — a timeframe switch on the web
-      // side naturally re-subscribes by requesting again.
-      m_liveSymbol   = symbol;
-      m_liveTfString = tfString;
-      m_liveTf       = tf;
+      // Only an offset=0 request (initial load / refresh / timeframe
+      // switch) re-subscribes for live bar.update pushes — a positive
+      // offset is an older-history page the web chart is paging in as the
+      // user pans back, and must not steal the live subscription out from
+      // under whatever symbol/timeframe is actually on screen.
+      if(offset == 0)
+        {
+         m_liveSymbol   = symbol;
+         m_liveTfString = tfString;
+         m_liveTf       = tf;
+        }
 
+      // start_pos=offset (0 = most recent) per CopyRates(symbol, tf,
+      // start_pos, count, rates) — confirmed against MQL5 docs before
+      // relying on it, not guessed: start_pos=0 is the current bar, higher
+      // values page further into the past.
       MqlRates rates[];
       ArraySetAsSeries(rates, true);
-      int copied = CopyRates(symbol, tf, 0, count, rates);
+      int copied = CopyRates(symbol, tf, offset, count, rates);
       if(copied <= 0)
         {
-         Print("XAU Trader Bridge: CopyRates(", symbol, ", ", tfString, ") failed (", GetLastError(), ")");
+         Print("XAU Trader Bridge: CopyRates(", symbol, ", ", tfString, ", offset=", offset, ") failed (", GetLastError(), ")");
          ArrayResize(rates, 0);
         }
       else
@@ -204,7 +214,7 @@ private:
          ArraySetAsSeries(rates, false);
         }
 
-      client.SendLine(CProtocol::BuildBarsData(reqId, symbol, tfString, rates));
+      client.SendLine(CProtocol::BuildBarsData(reqId, symbol, tfString, rates, offset));
      }
 
    void HandleRiskPreview(CSocketClient &client, const string symbol, const string reqId, const string line)

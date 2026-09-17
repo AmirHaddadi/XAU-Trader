@@ -91,3 +91,83 @@ export function revealBarsAnimated(chart: IChartApi, series: ISeriesApi<"Candles
 
   return noCancel;
 }
+
+// History-page entrance — used when the user pans back near the left edge
+// and an older batch of bars lands. Unlike revealBarsAnimated (a fresh
+// load/timeframe switch, where the whole dataset has no "current view" to
+// protect yet), this must NOT touch the visible time range: the user is
+// actively looking at something. It captures the range before the first
+// frame and re-asserts it after every setData() call, so the newly-
+// revealed older candles animate in to the left of/behind the current
+// viewport rather than yanking the camera to fit the enlarged dataset.
+//
+// `mergedBars` is the full, already-deduped bars array (older + existing);
+// `addedCount` is how many bars at the front of it are new this call.
+export function revealOlderBarsAnimated(
+  chart: IChartApi,
+  series: ISeriesApi<"Candlestick">,
+  mergedBars: Bar[],
+  addedCount: number,
+): () => void {
+  let cancelled = false;
+  const noCancel = () => {
+    cancelled = true;
+  };
+
+  const full = toCandlestickData(mergedBars);
+
+  if (addedCount <= 0 || mergedBars.length === 0) {
+    series.setData(full);
+    return noCancel;
+  }
+
+  let savedRange: ReturnType<ReturnType<IChartApi["timeScale"]>["getVisibleRange"]> = null;
+  try {
+    if (chart.paneSize().width === 0) {
+      series.setData(full);
+      return noCancel;
+    }
+    savedRange = chart.timeScale().getVisibleRange();
+  } catch {
+    series.setData(full);
+    return noCancel;
+  }
+
+  // Fewer steps for a small page than a fresh 5000-bar load — no point
+  // animating 45 frames to reveal 20 candles.
+  const steps = Math.max(6, Math.min(STEPS, Math.round(addedCount / 15)));
+  const duration = Math.max(350, Math.min(DURATION_MS, addedCount * 3));
+  const startTime = performance.now();
+
+  function step(now: number) {
+    if (cancelled) return;
+    const rawProgress = Math.min(1, (now - startTime) / duration);
+    const eased = easeOutCubic(rawProgress);
+    const stepIndex = Math.max(1, Math.min(steps, Math.ceil(eased * steps)));
+    const revealed = Math.max(1, Math.round((stepIndex / steps) * addedCount));
+    const startIdx = addedCount - revealed;
+
+    try {
+      series.setData(full.slice(startIdx));
+      if (savedRange) chart.timeScale().setVisibleRange(savedRange);
+    } catch {
+      cancelled = true;
+      return;
+    }
+
+    if (rawProgress < 1) {
+      requestAnimationFrame(step);
+    } else {
+      try {
+        series.setData(full);
+        if (savedRange) chart.timeScale().setVisibleRange(savedRange);
+      } catch {
+        // chart went hidden right at the tail end — nothing left to do
+      }
+    }
+  }
+
+  requestAnimationFrame(step);
+
+  return noCancel;
+}

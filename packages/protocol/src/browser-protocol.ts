@@ -30,7 +30,7 @@ export interface WsEnvelope<TType extends string, TPayload> {
 export type WsEaStatus = WsEnvelope<"ea.status", { connected: boolean }>;
 export type WsTick = WsEnvelope<"tick", Tick>;
 export type WsBarUpdate = WsEnvelope<"bar.update", { symbol: string; timeframe: string; bar: Bar }>;
-export type WsBarsData = WsEnvelope<"bars.data", { symbol: string; timeframe: string; bars: Bar[] }>;
+export type WsBarsData = WsEnvelope<"bars.data", { symbol: string; timeframe: string; bars: Bar[]; offset: number }>;
 export type WsRiskResult = WsEnvelope<"risk.result", RiskResult>;
 export type WsOrderAck = WsEnvelope<"order.ack", { ok: boolean; message: string; ticket?: number }>;
 export type WsPositions = WsEnvelope<"positions", { positions: PositionInfo[] }>;
@@ -74,7 +74,7 @@ export type BridgeToBrowserMessage =
 
 // ---- Browser -> Bridge (requests, correlated by reqId where meaningful) --
 
-export type BrowserBarsRequest = WsEnvelope<"bars.request", { symbol: string; timeframe: string; count: number }>;
+export type BrowserBarsRequest = WsEnvelope<"bars.request", { symbol: string; timeframe: string; count: number; offset?: number }>;
 export type BrowserRiskPreview = WsEnvelope<"risk.preview", { plan: TradePlan }>;
 export type BrowserOrderSend = WsEnvelope<"order.send", { plan: TradePlan }>;
 export type BrowserOrderModifyPending = WsEnvelope<"order.modifyPending", { ticket: number; price: number; sl: number; tp: number }>;

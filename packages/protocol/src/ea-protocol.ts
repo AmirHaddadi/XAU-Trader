@@ -40,10 +40,12 @@ export type EaTick = EaEnvelope<"tick", Tick>;
 
 export type EaBarUpdate = EaEnvelope<"bar.update", { symbol: string; timeframe: string; bar: Bar }>;
 
-// Response to BridgeBarsRequest
+// Response to BridgeBarsRequest. `offset` is echoed back from the request
+// so the client can tell an initial/refresh load (0 — replace) apart from
+// an older-history page (>0 — prepend); see BridgeBarsRequest.
 export type EaBarsData = EaEnvelope<
   "bars.data",
-  { symbol: string; timeframe: string; bars: Bar[] }
+  { symbol: string; timeframe: string; bars: Bar[]; offset: number }
 >;
 
 // Response to BridgeRiskPreview
@@ -86,9 +88,15 @@ export type EaToBridgeMessage =
 
 // ---- Bridge -> EA (requests, correlated by reqId) -------------------------
 
+// `offset` maps straight to MQL5's CopyRates(symbol, tf, start_pos, count,
+// rates) — 0 (default) is the most recent `count` bars and also (re)sets
+// the EA's live bar.update subscription for this symbol/timeframe; a
+// positive offset pages further into the past (the web client's own
+// currently-loaded bar count) without touching that subscription, for
+// infinite-scroll-style history loading as the user pans back.
 export type BridgeBarsRequest = EaEnvelope<
   "bars.request",
-  { symbol: string; timeframe: string; count: number }
+  { symbol: string; timeframe: string; count: number; offset?: number }
 >;
 
 export type BridgeRiskPreview = EaEnvelope<"risk.preview", { plan: TradePlan }>;

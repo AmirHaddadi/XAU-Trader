@@ -80,7 +80,7 @@ public:
       return Envelope("positions", "{\"positions\":[" + items + "]}");
      }
 
-   static string BuildBarsData(const string reqId, const string symbol, const string timeframe, const MqlRates &rates[])
+   static string BuildBarsData(const string reqId, const string symbol, const string timeframe, const MqlRates &rates[], const int offset)
      {
       string items = "";
       int total = ArraySize(rates);
@@ -93,8 +93,11 @@ public:
             (long)rates[i].time, rates[i].open, rates[i].high, rates[i].low, rates[i].close,
             (long)rates[i].tick_volume);
         }
-      string payload = StringFormat("{\"symbol\":\"%s\",\"timeframe\":\"%s\",\"bars\":[%s]}",
-                                     CJsonUtils::Escape(symbol), CJsonUtils::Escape(timeframe), items);
+      // `offset` is echoed back so the client can tell an initial/refresh
+      // load (0) apart from an older-history page (>0) — see
+      // packages/protocol/src/ea-protocol.ts's EaBarsData.
+      string payload = StringFormat("{\"symbol\":\"%s\",\"timeframe\":\"%s\",\"bars\":[%s],\"offset\":%d}",
+                                     CJsonUtils::Escape(symbol), CJsonUtils::Escape(timeframe), items, offset);
       return Envelope("bars.data", payload, reqId);
      }
 
@@ -170,6 +173,7 @@ public:
    static string ReadBarsRequestSymbol(const string json)   { return CJsonUtils::ExtractString(json, "symbol"); }
    static string ReadBarsRequestTimeframe(const string json){ return CJsonUtils::ExtractString(json, "timeframe"); }
    static int    ReadBarsRequestCount(const string json)    { return (int)CJsonUtils::ExtractInt(json, "count", 500); }
+   static int    ReadBarsRequestOffset(const string json)   { return (int)CJsonUtils::ExtractInt(json, "offset", 0); }
 
    //--- Parses the flat "plan" object nested in risk.preview/order.send
    //--- payloads into an STradePlan. Field names are unique across the

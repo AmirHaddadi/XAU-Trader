@@ -7,10 +7,21 @@ import { PriceLineDragController, type DraggableLine } from "@/lib/priceLineDrag
 import { DrawingLayerController } from "@/lib/drawingTools";
 import { readChartPalette } from "@/lib/theme";
 import { useCandleCountdown } from "@/lib/useCandleCountdown";
-import { revealBarsAnimated } from "@/lib/chartReveal";
+import { revealBarsAnimated, revealOlderBarsAnimated } from "@/lib/chartReveal";
+
+// How close (in bar-index terms) the visible left edge has to get to the
+// start of the currently-loaded data before another history page is
+// requested. Logical-range indices are 0-based over whatever's currently in
+// the series, so this is independent of how many bars have loaded so far.
+const HISTORY_EDGE_THRESHOLD = 50;
 
 interface LiveChartProps {
   bars: Bar[];
+  // How many bars at the front of `bars` are new since the last render from
+  // an older-history page landing (0 for a fresh load/timeframe switch) —
+  // tells the reveal effect below which animation applies. See
+  // useBridgeSocket's bars.data handler.
+  barsAppendedOlderCount: number;
   liveBar: Bar | undefined;
   timeframe: string | undefined;
   gridVisible: boolean;
@@ -22,6 +33,9 @@ interface LiveChartProps {
   activeDrawingTool: DrawingTool | null;
   onDrawingCreated: (drawing: Drawing) => void;
   onDrawingSelectedChange: (id: string | null) => void;
+  hasMoreHistory: boolean;
+  loadingOlderBars: boolean;
+  onRequestOlderBars: () => void;
 }
 
 // Candles from the EA's CopyRates history (full reload on `bars` change) +
@@ -35,6 +49,7 @@ interface LiveChartProps {
 // neither built in.
 export function LiveChart({
   bars,
+  barsAppendedOlderCount,
   liveBar,
   timeframe,
   gridVisible,
@@ -46,14 +61,22 @@ export function LiveChart({
   activeDrawingTool,
   onDrawingCreated,
   onDrawingSelectedChange,
+  hasMoreHistory,
+  loadingOlderBars,
+  onRequestOlderBars,
 }: LiveChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const dragRef = useRef<PriceLineDragController | null>(null);
   const drawRef = useRef<DrawingLayerController | null>(null);
-  const callbacksRef = useRef({ onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange });
-  callbacksRef.current = { onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange };
+  const callbacksRef = useRef({ onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onRequestOlderBars });
+  callbacksRef.current = { onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onRequestOlderBars };
+  // Read inside the pan-subscription's handler without re-subscribing on
+  // every render — subscribeVisibleLogicalRangeChange is wired once at
+  // mount (see below).
+  const historyGateRef = useRef({ hasMoreHistory, loadingOlderBars });
+  historyGateRef.current = { hasMoreHistory, loadingOlderBars };
 
   const countdown = useCandleCountdown(liveBar, timeframe);
 
@@ -110,7 +133,20 @@ export function LiveChart({
     });
     resizeObserver.observe(container);
 
+    // Infinite-scroll-style history: as the user pans/zooms back toward the
+    // start of the currently-loaded data, request another page. Logical
+    // range `from` is a 0-based index into the series' own data (not a bar
+    // count independent of what's loaded), so a fixed threshold works the
+    // same whether 500 bars are loaded or 50,000 are.
+    function onVisibleLogicalRangeChange(range: { from: number; to: number } | null) {
+      if (!range) return;
+      if (historyGateRef.current.loadingOlderBars || !historyGateRef.current.hasMoreHistory) return;
+      if (range.from < HISTORY_EDGE_THRESHOLD) callbacksRef.current.onRequestOlderBars();
+    }
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
+
     return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
       resizeObserver.disconnect();
       drag.destroy();
       draw.destroy();
@@ -157,9 +193,16 @@ export function LiveChart({
   // appropriate here instead of distracting on every tab visit.
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current || bars.length === 0) return;
-    const cancel = revealBarsAnimated(chartRef.current, seriesRef.current, bars);
+    // A history page landing (older bars prepended while the user pans
+    // back) needs a different reveal that preserves their current view —
+    // revealBarsAnimated's full-fit behavior would yank the camera to the
+    // enlarged dataset on every page. See lib/chartReveal.ts.
+    const cancel =
+      barsAppendedOlderCount > 0
+        ? revealOlderBarsAnimated(chartRef.current, seriesRef.current, bars, barsAppendedOlderCount)
+        : revealBarsAnimated(chartRef.current, seriesRef.current, bars);
     return cancel;
-  }, [bars]);
+  }, [bars, barsAppendedOlderCount]);
 
   // Incremental — the actual "live" part of the chart.
   useEffect(() => {

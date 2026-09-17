@@ -10,6 +10,11 @@ import type { BridgeToEaMessage, EaToBridgeMessage } from "@xau-trader/protocol"
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.EA_TCP_PORT ?? 9443);
 
+// Simulates a broker with finite history depth, so the pagination path's
+// "ran out" branch (hasMoreHistory -> false) gets exercised too, not just
+// the happy "more always available" path.
+const FAKE_MAX_HISTORY = 12000;
+
 const socket = connect(PORT, HOST, () => {
   console.log(`[fake-ea] connected to bridge at ${HOST}:${PORT}`);
   send({ type: "hello", payload: { account: 12345678, broker: "Demo Broker", symbol: "XAUUSD", magic: 574839201, eaVersion: "2.0.0-dev" } });
@@ -57,15 +62,25 @@ socket.on("data", (chunk) => {
     const msg = JSON.parse(line) as BridgeToEaMessage;
     console.log("[fake-ea] <-", msg.type, msg.payload);
     if (msg.type === "bars.request") {
-      const bars = Array.from({ length: msg.payload.count }, (_, i) => {
-        const t = Math.floor(Date.now() / 1000) - (msg.payload.count - i) * 60;
-        const o = 2400 + i * 0.1;
+      const offset = msg.payload.offset ?? 0;
+      // Mirrors CopyRates(symbol, tf, offset, count, rates): offset counts
+      // bars back from "now" (0 = most recent), count is capped once it
+      // would run past the simulated broker's history depth so the
+      // "ran out" (hasMoreHistory -> false) branch is reachable too.
+      const count = Math.max(0, Math.min(msg.payload.count, FAKE_MAX_HISTORY - offset));
+      const now = Math.floor(Date.now() / 1000);
+      const bars = Array.from({ length: count }, (_, i) => {
+        const posBack = offset + (count - 1 - i); // ascending chronological order — oldest first, like ArraySetAsSeries(false)
+        const t = now - posBack * 60;
+        const o = 2400 + (FAKE_MAX_HISTORY - posBack) * 0.01;
         return { time: t, open: o, high: o + 0.5, low: o - 0.5, close: o + 0.2, volume: 10 };
       });
-      send({ type: "bars.data", reqId: msg.reqId, payload: { symbol: msg.payload.symbol, timeframe: msg.payload.timeframe, bars } });
-      liveSymbol = msg.payload.symbol;
-      liveTimeframe = msg.payload.timeframe;
-      liveBar = { ...bars[bars.length - 1] };
+      send({ type: "bars.data", reqId: msg.reqId, payload: { symbol: msg.payload.symbol, timeframe: msg.payload.timeframe, bars, offset } });
+      if (offset === 0) {
+        liveSymbol = msg.payload.symbol;
+        liveTimeframe = msg.payload.timeframe;
+        liveBar = bars.length > 0 ? { ...bars[bars.length - 1] } : liveBar;
+      }
     }
     if (msg.type === "risk.preview") {
       send({ type: "risk.result", reqId: msg.reqId, payload: fakeRisk(msg.payload.plan) });
