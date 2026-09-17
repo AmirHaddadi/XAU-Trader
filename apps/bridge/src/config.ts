@@ -15,9 +15,12 @@ export const config = {
   // it in-process — packaging Next.js itself through pkg proved fragile
   // (dynamic route requires, native @next/swc binaries), while a portable
   // Node runtime running the real standalone server.js verified cleanly
-  // under Wine. The EA's InpWebPort input must match this for the "open in
-  // browser" step to point at the right port.
-  webPort: envInt("WEB_PORT", 8788),
+  // under Wine. 3000 is Next.js's own conventional default — kept the same
+  // here so the packaged build's port matches plain `next dev`'s port,
+  // rather than introducing a second port number to remember. The EA's
+  // InpWebPort input must match this for the "open in browser" step to
+  // point at the right port.
+  webPort: envInt("WEB_PORT", 3000),
   dbPath: process.env.DB_PATH ?? "./data/xautrader.db",
   logLevel: (process.env.LOG_LEVEL ?? "info") as "debug" | "info" | "warn" | "error",
   // The EA-facing socket is hard-bound to loopback regardless of env config —

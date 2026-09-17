@@ -44,7 +44,7 @@ input int     InpDeviationPoints   = 20;         // Max price deviation (points)
 input string  InpBridgeHost        = "127.0.0.1"; // Local web-platform bridge host (never change unless the bridge itself is remote)
 input int     InpBridgePort        = 9443;        // Local web-platform bridge TCP port — must match apps/bridge's EA_TCP_PORT
 input string  InpBridgeExePath     = "";          // Full path to xautrader-bridge.exe (from build/package-windows/out/win) — required for the Launch Platform button
-input int     InpWebPort           = 8788;        // Web dashboard port opened in the browser — must match the packaged bridge's WEB_PORT
+input int     InpWebPort           = 3000;        // Web dashboard port opened in the browser — must match the bridge's WEB_PORT (3000 = Next.js's own default, works for both `next dev` and the packaged build)
 
 COrderManager   g_orderMgr;
 string          g_currency;

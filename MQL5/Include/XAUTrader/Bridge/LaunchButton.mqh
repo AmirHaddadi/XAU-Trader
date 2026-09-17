@@ -42,7 +42,7 @@ class CLaunchButton
   {
 private:
    string            m_exePath;   // path to the packaged bridge executable (InpBridgeExePath)
-   string            m_webUrl;    // e.g. "http://127.0.0.1:8788"
+   string            m_webUrl;    // e.g. "http://127.0.0.1:3000"
    ENUM_LAUNCH_STATE m_state;
    ulong             m_waitStartMs;
 
