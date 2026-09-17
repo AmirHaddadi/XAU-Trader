@@ -25,6 +25,12 @@
 //--- order.modifyPosition messages instead of CHARTEVENT_OBJECT_DRAG.
 #define XAUT_BRIDGE_MODIFY_FLUSH_MIN_MS 350
 
+//--- How often the currently-subscribed live bar is re-pushed (see
+//--- CBridgeHandlers::PushBarUpdate). Independent of the tick throttle —
+//--- a chart doesn't need per-tick precision, this is about "does it look
+//--- alive", not matching every price fluctuation.
+#define XAUT_BAR_PUSH_MIN_MS 500
+
 class CBridgeHandlers
   {
 private:
@@ -36,6 +42,16 @@ private:
 
    CHistoryScanner m_history;
 
+   //--- The web chart's current "subscription" — set by whichever
+   //--- bars.request came in most recently (a timeframe switch just
+   //--- re-requests, which naturally replaces this). Bug found live: this
+   //--- subscription previously didn't exist at all, so no bar.update was
+   //--- ever pushed and the chart only ever painted once, on initial load.
+   string          m_liveSymbol;
+   string          m_liveTfString;
+   ENUM_TIMEFRAMES m_liveTf;
+   ulong           m_lastBarPushMs;
+
 public:
    CBridgeHandlers()
      {
@@ -44,6 +60,10 @@ public:
       m_modifySl = 0.0;
       m_modifyTp = 0.0;
       m_lastModifyFlushMs = 0;
+      m_liveSymbol = "";
+      m_liveTfString = "";
+      m_liveTf = PERIOD_CURRENT;
+      m_lastBarPushMs = 0;
      }
 
    //--- Returns true if positions likely changed and the caller should
@@ -126,6 +146,26 @@ public:
          client.SendLine(CProtocol::BuildHistoryNewDeals(deals));
      }
 
+   //--- Call every OnTimer — pushes the currently-forming bar for whatever
+   //--- symbol/timeframe the web chart last subscribed to via bars.request.
+   //--- No-op until the first bars.request arrives (nothing to push yet).
+   void PushBarUpdate(CSocketClient &client)
+     {
+      if(m_liveTfString == "")
+         return;
+      ulong now = GetTickCount64();
+      if(now - m_lastBarPushMs < XAUT_BAR_PUSH_MIN_MS)
+         return;
+      m_lastBarPushMs = now;
+
+      MqlRates rates[];
+      ArraySetAsSeries(rates, true);
+      if(CopyRates(m_liveSymbol, m_liveTf, 0, 1, rates) <= 0)
+         return; // no new data yet (e.g. market closed) — try again next tick
+
+      client.SendLine(CProtocol::BuildBarUpdate(m_liveSymbol, m_liveTfString, rates[0]));
+     }
+
 private:
    void HandleHistoryRequest(CSocketClient &client, const string symbol, const string reqId, const string line)
      {
@@ -142,6 +182,13 @@ private:
       string tfString  = CProtocol::ReadBarsRequestTimeframe(line);
       int    count     = CProtocol::ReadBarsRequestCount(line);
       ENUM_TIMEFRAMES tf = TimeframeFromString(tfString);
+
+      // Every bars.request is treated as "the web chart now wants live
+      // updates for this symbol/timeframe" — a timeframe switch on the web
+      // side naturally re-subscribes by requesting again.
+      m_liveSymbol   = symbol;
+      m_liveTfString = tfString;
+      m_liveTf       = tf;
 
       MqlRates rates[];
       ArraySetAsSeries(rates, true);

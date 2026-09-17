@@ -56,8 +56,11 @@ public:
 
       ObjectCreate(chartId, XAUT_LAUNCH_BTN_NAME, OBJ_BUTTON, 0, 0, 0);
       ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_CORNER, CORNER_LEFT_UPPER);
-      ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_XDISTANCE, 16);
-      ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_YDISTANCE, 16);
+      // Nudged down/right off the raw top-left corner (Amir: "15px down,
+      // 5px right") so it doesn't render flush against the terminal's own
+      // window chrome/toolbar.
+      ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_XDISTANCE, 21);
+      ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_YDISTANCE, 31);
       ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_XSIZE, XAUT_LAUNCH_BTN_W);
       ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_YSIZE, XAUT_LAUNCH_BTN_H);
       ObjectSetInteger(chartId, XAUT_LAUNCH_BTN_NAME, OBJPROP_CORNER, CORNER_LEFT_UPPER);

@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { Drawing, DrawingTool } from "@xau-trader/protocol";
 import { useBridgeSocket } from "@/lib/useBridgeSocket";
 import { useTradePlan } from "@/lib/useTradePlan";
 import type { DraggableLine } from "@/lib/priceLineDrag";
-import { I18nProvider, useI18n } from "@/lib/i18n";
-import { ConnectionBadge } from "@/components/ConnectionBadge";
-import { AccountBar } from "@/components/AccountBar";
+import { I18nProvider } from "@/lib/i18n";
+import { readChartPalette } from "@/lib/theme";
+import type { Timeframe } from "@/lib/timeframes";
+import { TopBar } from "@/components/TopBar";
 import { PositionsBar } from "@/components/PositionsBar";
 import { LiveChart } from "@/components/LiveChart";
+import { ChartToolbar } from "@/components/ChartToolbar";
 import { MoneyPanel } from "@/components/MoneyPanel";
 import { Journal } from "@/components/Journal";
 import { SettingsPanel } from "@/components/SettingsPanel";
@@ -38,8 +41,9 @@ function ThemeSync({ theme, lang }: { theme: string; lang: string }) {
 }
 
 function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
-  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null);
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
   const {
     wsConnected,
     eaConnected,
@@ -48,6 +52,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     symbol,
     positions,
     bars,
+    liveBar,
     lastError,
     settings,
     journalDeals,
@@ -91,13 +96,17 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
       : undefined,
   });
 
+  const timeframe = settings?.chartTimeframe ?? "M1";
+  const gridVisible = settings?.chartGridVisible ?? true;
+  const drawings = settings?.chartDrawings ?? [];
+
   const requestedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (symbol?.valid && requestedFor.current !== symbol.symbol) {
-      requestedFor.current = symbol.symbol;
-      requestBars(symbol.symbol, settings?.chartTimeframe ?? "M1", DEFAULT_BAR_COUNT);
+    if (symbol?.valid && requestedFor.current !== `${symbol.symbol}:${timeframe}`) {
+      requestedFor.current = `${symbol.symbol}:${timeframe}`;
+      requestBars(symbol.symbol, timeframe, DEFAULT_BAR_COUNT);
     }
-  }, [symbol, settings?.chartTimeframe, requestBars]);
+  }, [symbol, timeframe, requestBars]);
 
   useEffect(() => {
     if (tab === "journal") requestJournal();
@@ -116,20 +125,24 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   const digits = symbol?.digits ?? 2;
 
   const lines = useMemo<DraggableLine[]>(() => {
+    const palette = readChartPalette();
     const result: DraggableLine[] = [];
     if (reviewing) {
       if (plan.placement !== "market" && plan.entryPrice > 0) {
-        result.push({ id: "plan:entry", price: plan.entryPrice, color: "#d4af37", title: t("entry"), draggable: true, dashed: true });
+        result.push({ id: "plan:entry", price: plan.entryPrice, color: palette.accent, title: "Entry", draggable: true, dashed: true });
       }
-      if (plan.slPrice > 0) result.push({ id: "plan:sl", price: plan.slPrice, color: "#ef4444", title: t("sl"), draggable: true, dashed: true });
-      if (plan.tpPrice > 0) result.push({ id: "plan:tp", price: plan.tpPrice, color: "#22c55e", title: t("tp"), draggable: true, dashed: true });
+      if (plan.slPrice > 0) result.push({ id: "plan:sl", price: plan.slPrice, color: palette.sell, title: "SL", draggable: true, dashed: true });
+      if (plan.tpPrice > 0) result.push({ id: "plan:tp", price: plan.tpPrice, color: palette.buy, title: "TP", draggable: true, dashed: true });
     }
     for (const p of positions) {
-      if (p.sl > 0) result.push({ id: `pos:${p.ticket}:sl`, price: p.sl, color: "#ef4444", title: `#${p.ticket} ${t("sl")}`, draggable: true });
-      if (p.tp > 0) result.push({ id: `pos:${p.ticket}:tp`, price: p.tp, color: "#22c55e", title: `#${p.ticket} ${t("tp")}`, draggable: true });
+      if (p.sl > 0) result.push({ id: `pos:${p.ticket}:sl`, price: p.sl, color: palette.sell, title: `#${p.ticket} SL`, draggable: true });
+      if (p.tp > 0) result.push({ id: `pos:${p.ticket}:tp`, price: p.tp, color: palette.buy, title: `#${p.ticket} TP`, draggable: true });
     }
     return result;
-  }, [reviewing, plan, positions, t]);
+    // settings?.theme triggers a recompute so line colors follow a theme
+    // switch (readChartPalette() reads the DOM, not this prop directly).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reviewing, plan, positions, settings?.theme]);
 
   function handlePositionDrag(ticket: number, which: "sl" | "tp", price: number) {
     const current = pendingPosRef.current.get(ticket) ?? { sl: 0, tp: 0 };
@@ -148,70 +161,87 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     }
   }
 
+  function handleTimeframeChange(tf: Timeframe) {
+    if (tf === timeframe) return;
+    requestedFor.current = undefined; // force the effect above to re-request for the new timeframe
+    updateSettings({ chartTimeframe: tf });
+  }
+
+  function handleDrawingCreated(drawing: Drawing) {
+    updateSettings({ chartDrawings: [...drawings, drawing] });
+    setActiveDrawingTool(null);
+  }
+
+  function handleDeleteSelectedDrawing() {
+    if (!selectedDrawingId) return;
+    updateSettings({ chartDrawings: drawings.filter((d) => d.id !== selectedDrawingId) });
+    setSelectedDrawingId(null);
+  }
+
   return (
-    <main className="flex h-dvh flex-col gap-4 p-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex items-baseline gap-2">
-            <h1 className="text-lg font-semibold text-accent-gold">{t("appTitle")}</h1>
-            <span className="text-sm text-text-muted">{symbol?.symbol ?? "—"}</span>
-          </div>
-          <nav className="flex gap-1">
-            {(["dashboard", "journal", "settings"] as Tab[]).map((tb) => (
-              <button
-                key={tb}
-                type="button"
-                onClick={() => setTab(tb)}
-                className="rounded px-3 py-1.5 text-sm"
-                style={{
-                  color: tab === tb ? "var(--color-text-primary)" : "var(--color-text-muted)",
-                  backgroundColor: tab === tb ? "var(--color-card-alt)" : "transparent",
-                }}
-              >
-                {t(tb === "dashboard" ? "navDashboard" : tb === "journal" ? "navJournal" : "navSettings")}
-              </button>
-            ))}
-          </nav>
-        </div>
-        <div className="flex items-center gap-2">
-          {lastError && (
-            <span className="text-xs" style={{ color: "var(--color-sell)" }}>
-              {lastError}
-            </span>
-          )}
-          <ConnectionBadge label={t("connBridge")} connected={wsConnected} />
-          <ConnectionBadge label={t("connEA")} connected={eaConnected} />
-        </div>
-      </header>
+    <main className="flex h-dvh flex-col gap-3 p-3">
+      <TopBar
+        tab={tab}
+        onTabChange={setTab}
+        symbol={symbol}
+        wsConnected={wsConnected}
+        eaConnected={eaConnected}
+        lastError={lastError}
+        account={account}
+        tick={tick}
+      />
 
       {tab === "dashboard" && (
-        <>
-          <AccountBar account={account} symbol={symbol} tick={tick} />
-          <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px] gap-4">
-            <div className="min-h-0 rounded-lg border border-border bg-card p-2">
-              <LiveChart bars={bars} lines={lines} onLineDrag={handleLineDrag} onLineDragEnd={handleLineDrag} />
-            </div>
-            <MoneyPanel
-              plan={plan}
-              reviewing={reviewing}
-              riskResult={riskResult}
-              riskError={riskError}
-              busy={busy}
-              currency={account?.currency}
-              digits={digits}
-              onRiskModeChange={setRiskMode}
-              onRiskValueChange={setRiskValue}
-              onPlacementChange={setPlacement}
-              onRrRatioChange={setRrRatio}
-              onBuy={() => startReview("buy")}
-              onSell={() => startReview("sell")}
-              onConfirm={() => void confirmOrder()}
-              onCancel={cancelReview}
+        <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px] gap-3">
+          <div className="flex min-h-0 flex-col rounded-lg border border-border bg-card">
+            <ChartToolbar
+              timeframe={timeframe}
+              onTimeframeChange={handleTimeframeChange}
+              gridVisible={gridVisible}
+              onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
+              activeTool={activeDrawingTool}
+              onToolChange={setActiveDrawingTool}
+              hasSelection={selectedDrawingId !== null}
+              onDeleteSelected={handleDeleteSelectedDrawing}
             />
+            <div className="min-h-0 flex-1 p-2">
+              <LiveChart
+                bars={bars}
+                liveBar={liveBar}
+                timeframe={timeframe}
+                gridVisible={gridVisible}
+                theme={settings?.theme ?? "dark"}
+                lines={lines}
+                onLineDrag={handleLineDrag}
+                onLineDragEnd={handleLineDrag}
+                drawings={drawings}
+                activeDrawingTool={activeDrawingTool}
+                onDrawingCreated={handleDrawingCreated}
+                onDrawingSelectedChange={setSelectedDrawingId}
+              />
+            </div>
           </div>
-          <PositionsBar positions={positions} symbol={symbol} onClose={(ticket) => void closePosition(ticket)} />
-        </>
+          <MoneyPanel
+            plan={plan}
+            reviewing={reviewing}
+            riskResult={riskResult}
+            riskError={riskError}
+            busy={busy}
+            currency={account?.currency}
+            digits={digits}
+            onRiskModeChange={setRiskMode}
+            onRiskValueChange={setRiskValue}
+            onPlacementChange={setPlacement}
+            onRrRatioChange={setRrRatio}
+            onBuy={() => startReview("buy")}
+            onSell={() => startReview("sell")}
+            onConfirm={() => void confirmOrder()}
+            onCancel={cancelReview}
+          />
+        </div>
       )}
+
+      {tab === "dashboard" && <PositionsBar positions={positions} symbol={symbol} onClose={(ticket) => void closePosition(ticket)} />}
 
       {tab === "journal" && (
         <Journal

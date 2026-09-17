@@ -133,7 +133,7 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
                             </button>
                             <button
                               type="button"
-                              className="text-xs text-accent-gold"
+                              className="text-xs text-accent"
                               onClick={() => {
                                 onEditComment(selectedDeal.dealTicket, c.id, editDraft);
                                 setEditingId(undefined);
@@ -190,8 +190,8 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
                   onAddComment(selectedDeal.dealTicket, draft.trim());
                   setDraft("");
                 }}
-                className="self-end rounded px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-                style={{ backgroundColor: "var(--color-accent-gold)" }}
+                className="self-end rounded px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 disabled:opacity-40"
+                style={{ backgroundColor: "var(--color-accent)" }}
               >
                 {t("save")}
               </button>

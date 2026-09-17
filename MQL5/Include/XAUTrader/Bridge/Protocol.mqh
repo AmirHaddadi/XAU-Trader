@@ -98,6 +98,17 @@ public:
       return Envelope("bars.data", payload, reqId);
      }
 
+   //--- Push for the currently-forming bar only — see CBridgeHandlers::PushBarUpdate.
+   static string BuildBarUpdate(const string symbol, const string timeframe, const MqlRates &bar)
+     {
+      string barJson = StringFormat(
+         "{\"time\":%d,\"open\":%.5f,\"high\":%.5f,\"low\":%.5f,\"close\":%.5f,\"volume\":%d}",
+         (long)bar.time, bar.open, bar.high, bar.low, bar.close, (long)bar.tick_volume);
+      string payload = StringFormat("{\"symbol\":\"%s\",\"timeframe\":\"%s\",\"bar\":%s}",
+                                     CJsonUtils::Escape(symbol), CJsonUtils::Escape(timeframe), barJson);
+      return Envelope("bar.update", payload);
+     }
+
    static string BuildRiskResult(const string reqId, const SRiskResult &r)
      {
       string payload = StringFormat(

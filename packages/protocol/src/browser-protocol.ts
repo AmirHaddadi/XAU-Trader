@@ -8,6 +8,7 @@ import type {
   AppTheme,
   Bar,
   ClosedDeal,
+  Drawing,
   JournalComment,
   PlacementType,
   PositionInfo,
@@ -48,6 +49,8 @@ export interface Settings {
   placement: PlacementType;
   rrRatio: number;
   chartTimeframe: string;
+  chartGridVisible: boolean;
+  chartDrawings: Drawing[];
 }
 
 export type WsSettings = WsEnvelope<"settings.data", Settings>;

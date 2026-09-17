@@ -28,6 +28,24 @@ function send(msg: EaToBridgeMessage): void {
   socket.write(JSON.stringify(msg) + "\n");
 }
 
+// Simulates CBridgeHandlers::PushBarUpdate's subscription: the most recent
+// bars.request is remembered and re-pushed as a mutating bar.update every
+// 500ms, same cadence as the real EA (XAUT_BAR_PUSH_MIN_MS).
+let liveBar: { time: number; open: number; high: number; low: number; close: number; volume: number } | undefined;
+let liveSymbol = "";
+let liveTimeframe = "";
+setInterval(() => {
+  if (!liveBar) return;
+  const drift = (Math.random() - 0.5) * 0.3;
+  liveBar = {
+    ...liveBar,
+    close: liveBar.close + drift,
+    high: Math.max(liveBar.high, liveBar.close + drift),
+    low: Math.min(liveBar.low, liveBar.close + drift),
+  };
+  send({ type: "bar.update", payload: { symbol: liveSymbol, timeframe: liveTimeframe, bar: liveBar } });
+}, 500);
+
 let buffer = "";
 socket.on("data", (chunk) => {
   buffer += chunk.toString("utf8");
@@ -45,6 +63,9 @@ socket.on("data", (chunk) => {
         return { time: t, open: o, high: o + 0.5, low: o - 0.5, close: o + 0.2, volume: 10 };
       });
       send({ type: "bars.data", reqId: msg.reqId, payload: { symbol: msg.payload.symbol, timeframe: msg.payload.timeframe, bars } });
+      liveSymbol = msg.payload.symbol;
+      liveTimeframe = msg.payload.timeframe;
+      liveBar = { ...bars[bars.length - 1] };
     }
     if (msg.type === "risk.preview") {
       send({ type: "risk.result", reqId: msg.reqId, payload: fakeRisk(msg.payload.plan) });

@@ -130,3 +130,19 @@ export interface JournalComment {
   body: string;
   createdAt: number; // epoch ms
 }
+
+// Chart drawing tools (web-client-only — no MT5 round trip, these never
+// touch the trading engine). trendline/fib use both points; ray uses only
+// the first (a horizontal line from that time to the chart's right edge).
+export type DrawingTool = "trendline" | "ray" | "fib";
+
+export interface DrawingPoint {
+  time: number; // epoch seconds
+  price: number;
+}
+
+export interface Drawing {
+  id: string;
+  tool: DrawingTool;
+  points: DrawingPoint[];
+}

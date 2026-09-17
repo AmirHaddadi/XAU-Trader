@@ -550,6 +550,7 @@ void BridgeMaintain()
       return;
 
    PushBridgeStateThrottled();
+   g_bridgeHandlers.PushBarUpdate(g_bridge);
 
    bool positionsChanged = false;
    string lines[];

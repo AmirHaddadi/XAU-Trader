@@ -35,7 +35,7 @@ export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) 
           </thead>
           <tbody>
             {positions.map((p) => (
-              <tr key={p.ticket} className="border-t border-border">
+              <tr key={p.ticket} className="border-t border-border transition-colors duration-150 hover:bg-card-alt/60">
                 <td className="py-1.5 text-text-muted">{p.ticket}</td>
                 <td className="py-1.5" style={{ color: p.type === "buy" ? "var(--color-buy)" : "var(--color-sell)" }}>
                   {p.type.toUpperCase()}
@@ -54,7 +54,7 @@ export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) 
                   <button
                     type="button"
                     onClick={() => onClose(p.ticket)}
-                    className="rounded border border-border px-2 py-0.5 text-xs text-text-muted hover:text-text-primary"
+                    className="rounded border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:border-sell hover:text-sell"
                   >
                     {t("close")}
                   </button>

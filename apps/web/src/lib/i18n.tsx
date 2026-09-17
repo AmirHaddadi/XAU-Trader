@@ -75,6 +75,12 @@ const EN = {
   language: "Language",
   defaultTradeSettings: "Default Trade Settings",
   chartTimeframe: "Chart Timeframe",
+  toolTrend: "Trend",
+  toolRay: "Ray",
+  toolFib: "Fib",
+  grid: "Grid",
+  connecting: "Connecting…",
+  chartSection: "Chart",
 } as const;
 
 const FA: Record<keyof typeof EN, string> = {
@@ -144,6 +150,12 @@ const FA: Record<keyof typeof EN, string> = {
   language: "زبان",
   defaultTradeSettings: "تنظیمات پیش‌فرض معامله",
   chartTimeframe: "تایم‌فریم چارت",
+  toolTrend: "خط روند",
+  toolRay: "خط افقی",
+  toolFib: "فیبوناچی",
+  grid: "گرید",
+  connecting: "در حال اتصال...",
+  chartSection: "چارت",
 };
 
 export type TranslationKey = keyof typeof EN;

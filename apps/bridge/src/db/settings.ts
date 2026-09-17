@@ -12,6 +12,8 @@ const DEFAULTS: Settings = {
   placement: "market",
   rrRatio: 2,
   chartTimeframe: "M1",
+  chartGridVisible: true,
+  chartDrawings: [],
 };
 
 export function getSettings(): Settings {

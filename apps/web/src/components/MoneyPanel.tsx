@@ -66,7 +66,7 @@ export function MoneyPanel({
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           {t("sizingMode")}
           <select
-            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             value={plan.riskMode}
             onChange={(e) => onRiskModeChange(e.target.value as RiskMode)}
           >
@@ -84,7 +84,7 @@ export function MoneyPanel({
             type="number"
             step="0.1"
             min="0"
-            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary tabular-nums"
+            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary tabular-nums transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             value={plan.riskValue}
             onChange={(e) => onRiskValueChange(Number(e.target.value))}
           />
@@ -93,7 +93,7 @@ export function MoneyPanel({
         <label className="flex flex-col gap-1 text-xs text-text-muted">
           {t("orderType")}
           <select
-            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             value={plan.placement}
             onChange={(e) => onPlacementChange(e.target.value as PlacementType)}
           >
@@ -110,7 +110,7 @@ export function MoneyPanel({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              className="h-7 w-7 rounded border border-border bg-card-alt text-text-primary disabled:opacity-40"
+              className="h-7 w-7 rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
               disabled={plan.rrRatio <= XAUT_RR_MIN}
               onClick={() => onRrRatioChange(Math.max(XAUT_RR_MIN, plan.rrRatio - XAUT_RR_STEP))}
             >
@@ -119,7 +119,7 @@ export function MoneyPanel({
             <span className="flex-1 text-center text-sm tabular-nums text-text-primary">{plan.rrRatio.toFixed(1)}</span>
             <button
               type="button"
-              className="h-7 w-7 rounded border border-border bg-card-alt text-text-primary disabled:opacity-40"
+              className="h-7 w-7 rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
               disabled={plan.rrRatio >= XAUT_RR_MAX}
               onClick={() => onRrRatioChange(Math.min(XAUT_RR_MAX, plan.rrRatio + XAUT_RR_STEP))}
             >
@@ -134,7 +134,7 @@ export function MoneyPanel({
           <button
             type="button"
             onClick={onBuy}
-            className="rounded py-2 text-sm font-semibold text-white"
+            className="rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:brightness-110 active:scale-[0.98]"
             style={{ backgroundColor: "var(--color-buy)" }}
           >
             {t("buy")}
@@ -142,14 +142,14 @@ export function MoneyPanel({
           <button
             type="button"
             onClick={onSell}
-            className="rounded py-2 text-sm font-semibold text-white"
+            className="rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:brightness-110 active:scale-[0.98]"
             style={{ backgroundColor: "var(--color-sell)" }}
           >
             {t("sell")}
           </button>
         </div>
       ) : (
-        <div className="flex flex-col gap-2 rounded-lg border border-border bg-card-alt p-3">
+        <div className="flex flex-col gap-2 rounded-lg border border-border bg-card-alt p-3 animate-fade-in-up">
           <div className="flex items-center justify-between text-xs text-text-muted">
             <span>
               {t("confirmTrade")} — {t(plan.direction === "buy" ? "buy" : "sell").toUpperCase()}
@@ -178,14 +178,18 @@ export function MoneyPanel({
             <p className="text-sm text-text-muted">{t("calculating")}</p>
           )}
           <div className="grid grid-cols-2 gap-3 pt-1">
-            <button type="button" onClick={onCancel} className="rounded border border-border py-2 text-sm text-text-primary">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded border border-border py-2 text-sm text-text-primary transition-colors duration-150 hover:bg-card"
+            >
               {t("cancel")}
             </button>
             <button
               type="button"
               onClick={onConfirm}
               disabled={!canConfirm}
-              className="rounded py-2 text-sm font-semibold text-white disabled:opacity-40"
+              className="rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:enabled:brightness-110 active:enabled:scale-[0.98] disabled:opacity-40"
               style={{ backgroundColor: plan.direction === "buy" ? "var(--color-buy)" : "var(--color-sell)" }}
             >
               {busy ? t("sending") : t("confirm")}

@@ -9,7 +9,7 @@ export interface DraggableLine {
   dashed?: boolean;
 }
 
-const HIT_TOLERANCE_PX = 6;
+const HIT_TOLERANCE_PX = 8;
 
 // lightweight-charts (the free TradingView library, as opposed to their
 // licensed Advanced Charting Library) has no built-in draggable price
@@ -28,7 +28,19 @@ export class PriceLineDragController {
   constructor(series: ISeriesApi<"Candlestick">, container: HTMLElement) {
     this.series = series;
     this.container = container;
-    container.addEventListener("pointerdown", this.handlePointerDown);
+    // Capture phase, not bubble: lightweight-charts attaches its own
+    // pan/crosshair pointerdown handler directly on its internal canvas (a
+    // descendant of `container`), which fires *before* a bubble-phase
+    // listener on the container ever would and can stop the event from
+    // bubbling further — a container-level bubble listener would then
+    // never see the click at all. Capture runs top-down before that, so
+    // this always sees the event first; stopPropagation() below is what
+    // then actually suppresses the chart's own pan/drag for this pointer
+    // when it started on a draggable line. This was the confirmed root
+    // cause of drag not working at all (Fix-Bugs.md item 8) — reasoned
+    // from lightweight-charts' architecture since I have no way to test a
+    // real browser directly.
+    container.addEventListener("pointerdown", this.handlePointerDown, { capture: true });
     window.addEventListener("pointermove", this.handlePointerMove);
     window.addEventListener("pointerup", this.handlePointerUp);
   }
@@ -76,7 +88,7 @@ export class PriceLineDragController {
   }
 
   destroy(): void {
-    this.container.removeEventListener("pointerdown", this.handlePointerDown);
+    this.container.removeEventListener("pointerdown", this.handlePointerDown, { capture: true });
     window.removeEventListener("pointermove", this.handlePointerMove);
     window.removeEventListener("pointerup", this.handlePointerUp);
     for (const entry of this.lines.values()) this.series.removePriceLine(entry.handle);
@@ -104,6 +116,7 @@ export class PriceLineDragController {
       this.draggingId = bestId;
       this.container.style.cursor = "ns-resize";
       e.preventDefault();
+      e.stopPropagation(); // block the chart's own pan handler from also reacting to this pointerdown
     }
   };
 

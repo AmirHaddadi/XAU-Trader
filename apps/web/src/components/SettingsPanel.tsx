@@ -2,6 +2,7 @@
 
 import type { AppLang, AppTheme, PlacementType, RiskMode, Settings } from "@xau-trader/protocol";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { TIMEFRAMES } from "@/lib/timeframes";
 
 interface SettingsPanelProps {
   settings: Settings | undefined;
@@ -20,7 +21,8 @@ const PLACEMENT_KEY: Record<PlacementType, TranslationKey> = {
   stop: "placementStop",
 };
 
-const TIMEFRAMES = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
+const SELECT_CLASS =
+  "rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50";
 
 // Settings apply instantly on change (no separate Save step) — each field
 // fires settings.update immediately, matching how the theme/language toggle
@@ -38,7 +40,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
           <label className="flex flex-col gap-1 text-xs text-text-muted">
             {t("theme")}
             <select
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+              className={SELECT_CLASS}
               value={settings.theme}
               onChange={(e) => onUpdate({ theme: e.target.value as AppTheme })}
             >
@@ -49,7 +51,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
           <label className="flex flex-col gap-1 text-xs text-text-muted">
             {t("language")}
             <select
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+              className={SELECT_CLASS}
               value={settings.lang}
               onChange={(e) => onUpdate({ lang: e.target.value as AppLang })}
             >
@@ -66,7 +68,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
           <label className="flex flex-col gap-1 text-xs text-text-muted">
             {t("sizingMode")}
             <select
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+              className={SELECT_CLASS}
               value={settings.riskMode}
               onChange={(e) => onUpdate({ riskMode: e.target.value as RiskMode })}
             >
@@ -83,7 +85,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
               type="number"
               step="0.1"
               min="0"
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary tabular-nums"
+              className={`${SELECT_CLASS} tabular-nums`}
               value={settings.riskValue}
               onChange={(e) => onUpdate({ riskValue: Number(e.target.value) })}
             />
@@ -91,7 +93,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
           <label className="flex flex-col gap-1 text-xs text-text-muted">
             {t("orderType")}
             <select
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+              className={SELECT_CLASS}
               value={settings.placement}
               onChange={(e) => onUpdate({ placement: e.target.value as PlacementType })}
             >
@@ -109,7 +111,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
               step="0.5"
               min="1"
               max="5"
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary tabular-nums"
+              className={`${SELECT_CLASS} tabular-nums`}
               value={settings.rrRatio}
               onChange={(e) => onUpdate({ rrRatio: Number(e.target.value) })}
             />
@@ -117,7 +119,7 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
           <label className="flex flex-col gap-1 text-xs text-text-muted">
             {t("chartTimeframe")}
             <select
-              className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
+              className={SELECT_CLASS}
               value={settings.chartTimeframe}
               onChange={(e) => onUpdate({ chartTimeframe: e.target.value })}
             >
@@ -129,6 +131,19 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
             </select>
           </label>
         </div>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+        <h2 className="text-sm font-medium text-text-primary">{t("chartSection")}</h2>
+        <label className="flex items-center gap-2 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            checked={settings.chartGridVisible}
+            onChange={(e) => onUpdate({ chartGridVisible: e.target.checked })}
+            className="accent-[var(--color-accent)]"
+          />
+          {t("grid")}
+        </label>
       </div>
     </div>
   );

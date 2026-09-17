@@ -35,6 +35,15 @@ export interface BridgeState {
   positions: PositionInfo[];
   bars: Bar[];
   barsTimeframe: string | undefined;
+  // Separate from `bars` deliberately: `bars` only changes on a genuine
+  // full reload (initial load / timeframe switch), so the chart can
+  // setData()+fitContent() just for those. `liveBar` changes on every
+  // bar.update push (multiple times a second) and is applied via the
+  // chart's incremental series.update() instead — merging it into `bars`
+  // meant every live tick re-ran setData()+fitContent(), which reset the
+  // user's zoom/pan on every update (the root cause of the chart feeling
+  // "stuck"/unusable — see Fix-Bugs.md item 9).
+  liveBar: Bar | undefined;
   lastError: string | undefined;
   settings: Settings | undefined;
   journalDeals: ClosedDeal[];
@@ -50,6 +59,7 @@ const initialState: BridgeState = {
   positions: [],
   bars: [],
   barsTimeframe: undefined,
+  liveBar: undefined,
   lastError: undefined,
   settings: undefined,
   journalDeals: [],
@@ -137,17 +147,10 @@ export function useBridgeSocket() {
           setState((s) => ({ ...s, positions: msg.payload.positions }));
           return;
         case "bars.data":
-          setState((s) => ({ ...s, bars: msg.payload.bars, barsTimeframe: msg.payload.timeframe }));
+          setState((s) => ({ ...s, bars: msg.payload.bars, barsTimeframe: msg.payload.timeframe, liveBar: undefined }));
           return;
         case "bar.update":
-          setState((s) => {
-            if (s.barsTimeframe !== msg.payload.timeframe) return s;
-            const bars = [...s.bars];
-            const last = bars[bars.length - 1];
-            if (last && last.time === msg.payload.bar.time) bars[bars.length - 1] = msg.payload.bar;
-            else bars.push(msg.payload.bar);
-            return { ...s, bars };
-          });
+          setState((s) => (s.barsTimeframe === msg.payload.timeframe ? { ...s, liveBar: msg.payload.bar } : s));
           return;
         case "error":
           setState((s) => ({ ...s, lastError: msg.payload.message }));
