@@ -1,12 +1,18 @@
 "use client";
 
-import type { AppLang, AppTheme, PlacementType, RiskMode, Settings } from "@xau-trader/protocol";
+import { useState } from "react";
+import type { AppLang, AppTheme, PlacementType, RiskMode, Settings, UpdateCheckResult, UpdateProgressStage } from "@xau-trader/protocol";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import { TIMEFRAMES } from "@/lib/timeframes";
+import { Spinner } from "./Spinner";
 
 interface SettingsPanelProps {
   settings: Settings | undefined;
   onUpdate: (partial: Partial<Settings>) => void;
+  onCheckForUpdate: () => Promise<UpdateCheckResult>;
+  onApplyUpdate: () => void;
+  updateProgress: { stage: UpdateProgressStage; message?: string } | undefined;
 }
 
 const RISK_MODE_KEY: Record<RiskMode, TranslationKey> = {
@@ -28,7 +34,7 @@ const SELECT_CLASS =
 // fires settings.update immediately, matching how the theme/language toggle
 // itself needs to feel (see the plan: "دیگر پارامتر ها در متاتریدر عملیاتی
 // نباشد" — this tab is the one real operational settings surface now).
-export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
+export function SettingsPanel({ settings, onUpdate, onCheckForUpdate, onApplyUpdate, updateProgress }: SettingsPanelProps) {
   const { t } = useI18n();
   if (!settings) return <p className="text-sm text-text-muted">{t("calculating")}</p>;
 
@@ -144,6 +150,78 @@ export function SettingsPanel({ settings, onUpdate }: SettingsPanelProps) {
           />
           {t("grid")}
         </label>
+      </div>
+
+      <UpdateCheckSection onCheckForUpdate={onCheckForUpdate} onApplyUpdate={onApplyUpdate} updateProgress={updateProgress} />
+    </div>
+  );
+}
+
+const PROGRESS_KEY: Record<UpdateProgressStage, TranslationKey> = {
+  downloading: "updateDownloading",
+  installing: "updateInstalling",
+  restarting: "updateRestarting",
+  error: "updateFailed",
+};
+
+interface UpdateCheckSectionProps {
+  onCheckForUpdate: () => Promise<UpdateCheckResult>;
+  onApplyUpdate: () => void;
+  updateProgress: { stage: UpdateProgressStage; message?: string } | undefined;
+}
+
+// Manual-only, triggered by this button — see project memory
+// project_xau_trader_web_platform's self-update section: no automatic
+// startup/interval check for an app connected to a live broker/order flow.
+// The check itself (onCheckForUpdate) only compares version numbers; the
+// actual download/install/restart (onApplyUpdate, entirely backend-side —
+// see apps/bridge/src/selfUpdate.ts) is a second, explicit click once a
+// newer version is known to exist. Deliberately never shows a release URL
+// or any other detail of where the update comes from.
+function UpdateCheckSection({ onCheckForUpdate, onApplyUpdate, updateProgress }: UpdateCheckSectionProps) {
+  const { t } = useI18n();
+  const [lastResult, setLastResult] = useState<UpdateCheckResult | null>(null);
+  const { run: runCheck, pending: checking } = useAsyncAction({
+    action: onCheckForUpdate,
+    successMessage: (res) => (res.hasUpdate ? t("newVersionAvailable") : t("upToDate")),
+  });
+
+  const applying = updateProgress !== undefined && updateProgress.stage !== "error";
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      <h2 className="text-sm font-medium text-text-primary">{t("updatesSection")}</h2>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-text-muted">
+          {applying
+            ? t(PROGRESS_KEY[updateProgress.stage])
+            : updateProgress?.stage === "error"
+              ? `${t("updateFailed")}${updateProgress.message ? `: ${updateProgress.message}` : ""}`
+              : lastResult
+                ? `v${lastResult.currentVersion}${lastResult.hasUpdate ? ` — v${lastResult.latestVersion} ${t("newVersionAvailable")}` : ""}`
+                : t("updatesSectionHint")}
+        </p>
+        {lastResult?.hasUpdate ? (
+          <button
+            type="button"
+            disabled={applying}
+            onClick={onApplyUpdate}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors duration-150 hover:enabled:bg-accent/20 disabled:opacity-50"
+          >
+            {applying && <Spinner size={11} />}
+            {t("installAndRestart")}
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled={checking}
+            onClick={() => void runCheck().then((res) => res && setLastResult(res))}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border px-3 py-1.5 text-xs text-text-primary transition-colors duration-150 hover:enabled:bg-card-alt disabled:opacity-50"
+          >
+            {checking && <Spinner size={11} />}
+            {t("checkForUpdates")}
+          </button>
+        )}
       </div>
     </div>
   );

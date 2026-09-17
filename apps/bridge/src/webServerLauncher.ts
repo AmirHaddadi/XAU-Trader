@@ -27,6 +27,8 @@ declare global {
 // route requires, native @next/swc binaries) — a portable Node runtime
 // running the standalone output's real server.js, verified end-to-end
 // under Wine during Phase D, is the solid alternative.
+let webServerChild: ReturnType<typeof execFile> | undefined;
+
 export function maybeSpawnWebServer(webPort: number): void {
   if (!process.pkg) return;
 
@@ -48,5 +50,15 @@ export function maybeSpawnWebServer(webPort: number): void {
     },
   );
   child.unref();
+  webServerChild = child;
   log.info(`spawned web server (pid ${child.pid}) on port ${webPort}`);
+}
+
+// Used by selfUpdate.ts right before this process exits to hand off to the
+// installer — without this, the old web server child would keep holding
+// its port after the new bridge process comes back up and tries to spawn
+// its own (EADDRINUSE).
+export function stopWebServer(): void {
+  webServerChild?.kill();
+  webServerChild = undefined;
 }

@@ -13,6 +13,8 @@ import { liveState } from "../state/liveState.js";
 import { journalEvents } from "../state/journalSync.js";
 import { addComment, deleteComment, editComment, listComments, listDeals } from "../db/journal.js";
 import { getSettings, updateSettings } from "../db/settings.js";
+import { checkForUpdate } from "../updateCheck.js";
+import { applyUpdate } from "../selfUpdate.js";
 import { createLogger } from "../log.js";
 
 const log = createLogger("ws");
@@ -145,6 +147,25 @@ export function startWsServer(httpServer: HttpServer): void {
         // Broadcast, not just reply — a second open tab should reflect a
         // theme/default change too, not just the tab that made it.
         broadcast(clients, { type: "settings.data", payload: settings });
+        return;
+      }
+      case "update.check": {
+        try {
+          const result = await checkForUpdate();
+          send(ws, { type: "update.result", reqId: msg.reqId, payload: result });
+        } catch (err) {
+          send(ws, { type: "error", reqId: msg.reqId, payload: { message: (err as Error).message } });
+        }
+        return;
+      }
+      case "update.apply": {
+        // Fire-and-forget — see BrowserUpdateApply's doc comment. Progress
+        // goes out as broadcasts so every connected tab sees it, not just
+        // the one that clicked the button; applyUpdate() itself exits the
+        // process partway through, so there's no final response to send.
+        applyUpdate((stage, message) => broadcast(clients, { type: "update.progress", payload: { stage, message } })).catch(
+          (err: Error) => broadcast(clients, { type: "update.progress", payload: { stage: "error", message: err.message } }),
+        );
         return;
       }
       default: {

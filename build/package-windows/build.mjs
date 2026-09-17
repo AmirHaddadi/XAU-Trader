@@ -155,12 +155,49 @@ function fetchPortableNode(platform) {
   }
 }
 
+// ---- Windows installer --------------------------------------------------
+
+// One file to hand to the client instead of a folder — see project memory
+// project_xau_trader_web_platform's self-update section for why (a
+// کارفرما testing this shouldn't need to poke around inside a raw output
+// folder, and it's also what apps/bridge/src/selfUpdate.ts's silent
+// /S install targets). Linux has no installer step — that output stays a
+// plain folder, since it's a dev/testing target here, not a real
+// deployment target.
+function buildInstaller(version) {
+  console.log("\n=== Windows: NSIS installer ===");
+  const nsiScript = path.join(__dirname, "installer.nsi");
+  const srcDir = path.join(OUT_DIR, "win");
+  const outFile = path.join(OUT_DIR, `XAUTrader-Setup-${version}.exe`);
+
+  try {
+    execFileSync("makensis", [`/DVERSION=${version}`, `/DSRCDIR=${srcDir}`, `/DOUTFILE=${outFile}`, nsiScript], {
+      stdio: "inherit",
+    });
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      console.warn(
+        "\nmakensis not found — skipping installer build. Install NSIS (e.g. `sudo apt-get install -y nsis` on " +
+          "this dev machine) and re-run `pnpm package` to produce the single-file Windows installer; the raw " +
+          `${srcDir} folder is still usable on its own (copy it and run xautrader-bridge.exe directly).`,
+      );
+      return;
+    }
+    throw err;
+  }
+  console.log(`Installer: ${outFile}`);
+}
+
 // ---- Main ---------------------------------------------------------------
+
+const rootPkg = JSON.parse(readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"));
 
 clean();
 buildBridge();
 buildWeb();
 for (const platform of Object.keys(TARGETS)) fetchPortableNode(platform);
+buildInstaller(rootPkg.version);
 
-console.log(`\nDone. Output in ${OUT_DIR}/{win,linux}/`);
-console.log("Each folder is self-contained — copy it to the target machine and run xautrader-bridge{.exe} directly.");
+console.log(`\nDone. Output in ${OUT_DIR}/`);
+console.log(`  XAUTrader-Setup-${rootPkg.version}.exe  <- hand this to a tester/client (if makensis was available)`);
+console.log("  win/, linux/                             <- raw self-contained folders (dev use / no-installer platforms)");

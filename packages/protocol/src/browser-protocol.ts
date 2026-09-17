@@ -56,6 +56,27 @@ export interface Settings {
 export type WsSettings = WsEnvelope<"settings.data", Settings>;
 export type WsError = WsEnvelope<"error", { message: string }>;
 
+// Deliberately just a version comparison + a yes/no — never a release URL,
+// asset name, or anything else that would tell a browser-devtools-inspecting
+// user where this app's source lives. That lookup (and the actual
+// download+install) happens entirely inside the bridge process — see
+// apps/bridge/src/{updateCheck,selfUpdate}.ts.
+export interface UpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+}
+export type WsUpdateResult = WsEnvelope<"update.result", UpdateCheckResult>;
+
+// Pushed (not a reqId-correlated response) while applyUpdate() runs in the
+// bridge — the process exits itself partway through this sequence (see
+// selfUpdate.ts) so there's no single "final" response to correlate to
+// anyway; the browser just renders whichever stage arrives last until the
+// WebSocket drops, then its normal reconnect logic (useBridgeSocket.ts)
+// picks the new instance back up once it's listening again.
+export type UpdateProgressStage = "downloading" | "installing" | "restarting" | "error";
+export type WsUpdateProgress = WsEnvelope<"update.progress", { stage: UpdateProgressStage; message?: string }>;
+
 export type BridgeToBrowserMessage =
   | WsEaStatus
   | WsTick
@@ -70,6 +91,8 @@ export type BridgeToBrowserMessage =
   | WsJournalData
   | WsJournalComments
   | WsSettings
+  | WsUpdateResult
+  | WsUpdateProgress
   | WsError;
 
 // ---- Browser -> Bridge (requests, correlated by reqId where meaningful) --
@@ -91,6 +114,11 @@ export type BrowserJournalCommentsRequest = WsEnvelope<"journal.comments.request
 export type BrowserSettingsUpdate = WsEnvelope<"settings.update", Partial<Settings>>;
 export type BrowserSettingsRequest = WsEnvelope<"settings.request", Record<string, never>>;
 
+export type BrowserUpdateCheck = WsEnvelope<"update.check", Record<string, never>>;
+// Fire-and-forget by design — see WsUpdateProgress above for why there's no
+// matching response type.
+export type BrowserUpdateApply = WsEnvelope<"update.apply", Record<string, never>>;
+
 export type BrowserToBridgeMessage =
   | BrowserBarsRequest
   | BrowserRiskPreview
@@ -105,4 +133,6 @@ export type BrowserToBridgeMessage =
   | BrowserJournalCommentDelete
   | BrowserJournalCommentsRequest
   | BrowserSettingsUpdate
-  | BrowserSettingsRequest;
+  | BrowserSettingsRequest
+  | BrowserUpdateCheck
+  | BrowserUpdateApply;

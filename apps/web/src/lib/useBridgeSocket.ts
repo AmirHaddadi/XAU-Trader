@@ -14,6 +14,8 @@ import type {
   SymbolMeta,
   Tick,
   TradePlan,
+  UpdateCheckResult,
+  UpdateProgressStage,
 } from "@xau-trader/protocol";
 import { BRIDGE_WS_URL } from "./config";
 
@@ -59,6 +61,12 @@ export interface BridgeState {
   settings: Settings | undefined;
   journalDeals: ClosedDeal[];
   journalComments: Record<number, JournalComment[]>;
+  // Set only while an update.apply is actually running — see selfUpdate.ts
+  // on the bridge. The bridge process exits partway through that sequence,
+  // so this just holds whichever stage arrived last until the WebSocket
+  // drops (wsConnected flips false) and the normal reconnect loop picks the
+  // restarted instance back up.
+  updateProgress: { stage: UpdateProgressStage; message?: string } | undefined;
 }
 
 const initialState: BridgeState = {
@@ -78,6 +86,7 @@ const initialState: BridgeState = {
   settings: undefined,
   journalDeals: [],
   journalComments: {},
+  updateProgress: undefined,
 };
 
 function newReqId(): string {
@@ -128,7 +137,10 @@ export function useBridgeSocket() {
       socket = new WebSocket(BRIDGE_WS_URL);
       wsRef.current = socket;
 
-      socket.onopen = () => setState((s) => ({ ...s, wsConnected: true }));
+      // Clears any stale "restarting" progress from a prior update.apply —
+      // a fresh connection (first load, or the reconnect after the bridge
+      // actually restarted) means whatever that was is over.
+      socket.onopen = () => setState((s) => ({ ...s, wsConnected: true, updateProgress: undefined }));
       socket.onclose = () => {
         setState((s) => ({ ...s, wsConnected: false, eaConnected: false }));
         if (!cancelled) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
@@ -197,6 +209,9 @@ export function useBridgeSocket() {
           return;
         case "settings.data":
           setState((s) => ({ ...s, settings: msg.payload }));
+          return;
+        case "update.progress":
+          setState((s) => ({ ...s, updateProgress: msg.payload }));
           return;
         case "journal.update":
           setState((s) => {
@@ -312,6 +327,20 @@ export function useBridgeSocket() {
     [send],
   );
 
+  const checkForUpdate = useCallback(async (): Promise<UpdateCheckResult> => {
+    const res = await request({ type: "update.check", payload: {} });
+    if (res.type === "error") throw new Error(res.payload.message);
+    if (res.type !== "update.result") throw new Error(`unexpected response: ${res.type}`);
+    return res.payload;
+  }, [request]);
+
+  // Fire-and-forget — the bridge process exits partway through applying an
+  // update (see selfUpdate.ts), so there's no response to correlate;
+  // progress comes back as update.progress pushes instead (see above).
+  const applyUpdate = useCallback(() => {
+    send({ type: "update.apply", payload: {} });
+  }, [send]);
+
   const requestComments = useCallback(
     (dealTicket: number) => {
       send({ type: "journal.comments.request", payload: { dealTicket } });
@@ -370,5 +399,7 @@ export function useBridgeSocket() {
     addJournalComment,
     editJournalComment,
     deleteJournalComment,
+    checkForUpdate,
+    applyUpdate,
   };
 }

@@ -85,6 +85,16 @@ const EN = {
   orderFailed: "Order failed",
   positionClosed: "Position closed",
   positionCloseFailed: "Failed to close position",
+  updatesSection: "Updates",
+  updatesSectionHint: "Check whether a newer version is available",
+  checkForUpdates: "Check for Updates",
+  upToDate: "You're up to date",
+  newVersionAvailable: "New version available",
+  installAndRestart: "Install & Restart",
+  updateDownloading: "Downloading update…",
+  updateInstalling: "Installing…",
+  updateRestarting: "Restarting — reconnecting automatically…",
+  updateFailed: "Update failed",
 } as const;
 
 const FA: Record<keyof typeof EN, string> = {
@@ -164,6 +174,16 @@ const FA: Record<keyof typeof EN, string> = {
   orderFailed: "ثبت سفارش ناموفق بود",
   positionClosed: "پوزیشن بسته شد",
   positionCloseFailed: "بستن پوزیشن ناموفق بود",
+  updatesSection: "بروزرسانی",
+  updatesSectionHint: "بررسی وجود نسخه جدیدتر",
+  checkForUpdates: "بررسی بروزرسانی",
+  upToDate: "شما به‌روز هستید",
+  newVersionAvailable: "نسخه جدید موجود است",
+  installAndRestart: "نصب و راه‌اندازی مجدد",
+  updateDownloading: "در حال دانلود بروزرسانی...",
+  updateInstalling: "در حال نصب...",
+  updateRestarting: "در حال راه‌اندازی مجدد — اتصال بصورت خودکار برقرار می‌شود...",
+  updateFailed: "بروزرسانی ناموفق بود",
 };
 
 export type TranslationKey = keyof typeof EN;

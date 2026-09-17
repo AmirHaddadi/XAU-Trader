@@ -85,6 +85,9 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     addJournalComment,
     editJournalComment,
     deleteJournalComment,
+    checkForUpdate,
+    applyUpdate,
+    updateProgress,
   } = bridge;
 
   const {
@@ -298,7 +301,15 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
         />
       )}
 
-      {tab === "settings" && <SettingsPanel settings={settings} onUpdate={updateSettings} />}
+      {tab === "settings" && (
+        <SettingsPanel
+          settings={settings}
+          onUpdate={updateSettings}
+          onCheckForUpdate={checkForUpdate}
+          onApplyUpdate={applyUpdate}
+          updateProgress={updateProgress}
+        />
+      )}
     </main>
   );
 }

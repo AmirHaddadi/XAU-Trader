@@ -11,6 +11,7 @@
     "dev:bridge": "pnpm --filter @xau-trader/bridge dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
-    "package": "node build/package-windows/build.mjs"
+    "package": "node build/package-windows/build.mjs",
+    "bump": "node scripts/bump-version.mjs"
   }
 }
