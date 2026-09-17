@@ -48,6 +48,7 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
   const [reviewing, setReviewing] = useState(false);
   const [riskResult, setRiskResult] = useState<RiskResult | undefined>(undefined);
   const [riskError, setRiskError] = useState<string | undefined>(undefined);
+  const [previewPending, setPreviewPending] = useState(false);
   const [busy, setBusy] = useState(false);
   const previewGenRef = useRef(0);
   const appliedSettingsDefaults = useRef(false);
@@ -110,12 +111,20 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
 
   // Debounced risk.preview round-trip — the EA is the real authority; this
   // just keeps the on-screen lots/risk/reward readout live while editing.
+  // `previewPending` is set the instant the plan changes (not just once the
+  // debounce timer fires) so a drag shows "recalculating" immediately
+  // rather than the old numbers sitting there looking stale for 120ms+
+  // round-trip before silently snapping to new ones — reported as feeling
+  // "dry"/rigid live; the fix is a real in-flight indicator (see
+  // MoneyPanel's spinner), not just a faster debounce.
   useEffect(() => {
     if (!reviewing) {
       setRiskResult(undefined);
       setRiskError(undefined);
+      setPreviewPending(false);
       return;
     }
+    setPreviewPending(true);
     const generation = ++previewGenRef.current;
     const timer = setTimeout(() => {
       previewRisk(plan)
@@ -127,6 +136,9 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
         })
         .catch((err: Error) => {
           if (previewGenRef.current === generation) setRiskError(err.message);
+        })
+        .finally(() => {
+          if (previewGenRef.current === generation) setPreviewPending(false);
         });
     }, PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(timer);
@@ -169,6 +181,7 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
     reviewing,
     riskResult,
     riskError,
+    previewPending,
     busy,
     startReview,
     cancelReview,

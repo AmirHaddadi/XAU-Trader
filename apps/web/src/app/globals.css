@@ -92,6 +92,18 @@ body {
   animation: fade-in-up 180ms ease-out;
 }
 
+/* Real spinner ("چرخش") for an in-flight risk.preview recalculation — the
+   money panel's numbers used to hard-snap from old to new once the debounced
+   round-trip resolved, with no indication a recalc was even happening. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.animate-spin-premium {
+  animation: spin 0.7s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

@@ -75,6 +75,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     reviewing,
     riskResult,
     riskError,
+    previewPending,
     busy,
     startReview,
     cancelReview,
@@ -233,6 +234,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
           reviewing={reviewing}
           riskResult={riskResult}
           riskError={riskError}
+          previewPending={previewPending}
           busy={busy}
           currency={account?.currency}
           digits={digits}

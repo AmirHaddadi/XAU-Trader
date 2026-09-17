@@ -2,12 +2,14 @@ import type { PlacementType, RiskMode, RiskResult, TradePlan } from "@xau-trader
 import { validationMessage } from "@/lib/validationMessages";
 import { XAUT_RR_MAX, XAUT_RR_MIN, XAUT_RR_STEP } from "@/lib/tradeDefaults";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { Spinner } from "./Spinner";
 
 interface MoneyPanelProps {
   plan: TradePlan;
   reviewing: boolean;
   riskResult: RiskResult | undefined;
   riskError: string | undefined;
+  previewPending: boolean;
   busy: boolean;
   currency: string | undefined;
   digits: number;
@@ -42,6 +44,7 @@ export function MoneyPanel({
   reviewing,
   riskResult,
   riskError,
+  previewPending,
   busy,
   currency,
   digits,
@@ -154,13 +157,21 @@ export function MoneyPanel({
             <span>
               {t("confirmTrade")} — {t(plan.direction === "buy" ? "buy" : "sell").toUpperCase()}
             </span>
+            {/* Real "چرخش" (spinning) in-flight indicator — numbers below
+                stay visible and just dim smoothly instead of being replaced
+                by a "Calculating..." text swap, so a drag-triggered
+                recalculation reads as live/responsive, not a jump cut. */}
+            {previewPending && <Spinner className="text-accent" />}
           </div>
           {errorText ? (
             <p className="text-sm" style={{ color: "var(--color-sell)" }}>
               {errorText}
             </p>
           ) : riskResult ? (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm tabular-nums">
+            <div
+              className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm tabular-nums transition-opacity duration-200"
+              style={{ opacity: previewPending ? 0.55 : 1 }}
+            >
               <span className="text-text-muted">{t("lots")}</span>
               <span className="text-right text-text-primary">{riskResult.lots.toFixed(2)}</span>
               <span className="text-text-muted">{t("risk")}</span>
@@ -175,7 +186,9 @@ export function MoneyPanel({
               <span className="text-right text-text-primary">{plan.entryPrice.toFixed(digits)}</span>
             </div>
           ) : (
-            <p className="text-sm text-text-muted">{t("calculating")}</p>
+            <p className="flex items-center gap-2 text-sm text-text-muted">
+              <Spinner /> {t("calculating")}
+            </p>
           )}
           <div className="grid grid-cols-2 gap-3 pt-1">
             <button
