@@ -1,19 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
-import type { Bar, Drawing, DrawingTool } from "@xau-trader/protocol";
+import type { Bar, Drawing, DrawingTool, PositionInfo } from "@xau-trader/protocol";
 import { PriceLineDragController, type DraggableLine } from "@/lib/priceLineDrag";
 import { DrawingLayerController } from "@/lib/drawingTools";
+import { PnlOverlayController } from "@/lib/pnlOverlay";
 import { readChartPalette } from "@/lib/theme";
 import { useCandleCountdown } from "@/lib/useCandleCountdown";
 import { revealBarsAnimated, revealOlderBarsAnimated } from "@/lib/chartReveal";
+import { useI18n } from "@/lib/i18n";
 
 // How close (in bar-index terms) the visible left edge has to get to the
 // start of the currently-loaded data before another history page is
 // requested. Logical-range indices are 0-based over whatever's currently in
 // the series, so this is independent of how many bars have loaded so far.
 const HISTORY_EDGE_THRESHOLD = 50;
+
+// Matches timeScale's own configured rightOffset below — that's how many
+// bars of empty space sit to the right of the last candle at the resting
+// "live" position, so scrollPosition() reads ~RIGHT_OFFSET there, not 0.
+// A little slack (LIVE_EDGE_TOLERANCE) avoids the "Go Live" button
+// flickering in/out from sub-bar scroll jitter right at that position.
+const RIGHT_OFFSET = 12;
+const LIVE_EDGE_TOLERANCE = 3;
 
 interface LiveChartProps {
   bars: Bar[];
@@ -36,6 +46,8 @@ interface LiveChartProps {
   hasMoreHistory: boolean;
   loadingOlderBars: boolean;
   onRequestOlderBars: () => void;
+  positions: PositionInfo[];
+  currency: string | undefined;
 }
 
 // Candles from the EA's CopyRates history (full reload on `bars` change) +
@@ -64,12 +76,16 @@ export function LiveChart({
   hasMoreHistory,
   loadingOlderBars,
   onRequestOlderBars,
+  positions,
+  currency,
 }: LiveChartProps) {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const dragRef = useRef<PriceLineDragController | null>(null);
   const drawRef = useRef<DrawingLayerController | null>(null);
+  const pnlRef = useRef<PnlOverlayController | null>(null);
   const callbacksRef = useRef({ onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onRequestOlderBars });
   callbacksRef.current = { onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onRequestOlderBars };
   // Read inside the pan-subscription's handler without re-subscribing on
@@ -79,6 +95,10 @@ export function LiveChart({
   historyGateRef.current = { hasMoreHistory, loadingOlderBars };
 
   const countdown = useCandleCountdown(liveBar, timeframe);
+  // Whether the view has been panned/zoomed away from the live edge — see
+  // the onVisibleLogicalRangeChange subscription below. Drives the
+  // "Go Live" button; scrollToRealTime() (also below) is what it calls.
+  const [showGoLive, setShowGoLive] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -114,10 +134,13 @@ export function LiveChart({
       (id) => callbacksRef.current.onDrawingSelectedChange(id),
     );
 
+    const pnl = new PnlOverlayController(chart, series, container);
+
     chartRef.current = chart;
     seriesRef.current = series;
     dragRef.current = drag;
     drawRef.current = draw;
+    pnlRef.current = pnl;
 
     // The chart stays mounted-but-hidden (display:none) on other tabs so
     // live ticks are never missed (see page.tsx) — but a background reload
@@ -145,16 +168,29 @@ export function LiveChart({
     }
     chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
 
+    // "Go Live": scrollPosition() is the distance (in bars) from the right
+    // edge of the timescale to the latest bar — ~RIGHT_OFFSET at the
+    // resting live position (that's the configured gap, not 0), and
+    // shrinking as the user pans/zooms back into history.
+    function onScrollPositionChange() {
+      const pos = chart.timeScale().scrollPosition();
+      setShowGoLive(pos < RIGHT_OFFSET - LIVE_EDGE_TOLERANCE);
+    }
+    chart.timeScale().subscribeVisibleTimeRangeChange(onScrollPositionChange);
+
     return () => {
       chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange);
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(onScrollPositionChange);
       resizeObserver.disconnect();
       drag.destroy();
       draw.destroy();
+      pnl.destroy();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
       dragRef.current = null;
       drawRef.current = null;
+      pnlRef.current = null;
     };
     // Intentionally mount-only: theme/gridVisible are re-applied by the
     // effects below via applyOptions() rather than recreating the chart.
@@ -228,8 +264,22 @@ export function LiveChart({
     drawRef.current?.setActiveTool(activeDrawingTool);
   }, [activeDrawingTool]);
 
+  useEffect(() => {
+    pnlRef.current?.setPositions(positions, currency);
+  }, [positions, currency]);
+
   return (
     <div ref={containerRef} className="relative h-full w-full">
+      {showGoLive && (
+        <button
+          type="button"
+          onClick={() => chartRef.current?.timeScale().scrollToRealTime()}
+          className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-card/90 px-2.5 py-1 text-xs font-medium text-text-primary shadow-sm backdrop-blur-sm transition-colors duration-150 hover:bg-card-alt animate-fade-in-up"
+        >
+          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--color-accent)" }} />
+          {t("goLive")}
+        </button>
+      )}
       {countdown && (
         <div
           className="pointer-events-none absolute right-3 top-3 z-10 rounded-md border border-border bg-card/90 px-2 py-1 text-xs tabular-nums backdrop-blur-sm"

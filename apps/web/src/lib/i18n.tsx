@@ -95,6 +95,7 @@ const EN = {
   updateInstalling: "Installing…",
   updateRestarting: "Restarting — reconnecting automatically…",
   updateFailed: "Update failed",
+  goLive: "Go Live",
 } as const;
 
 const FA: Record<keyof typeof EN, string> = {
@@ -184,6 +185,7 @@ const FA: Record<keyof typeof EN, string> = {
   updateInstalling: "در حال نصب...",
   updateRestarting: "در حال راه‌اندازی مجدد — اتصال بصورت خودکار برقرار می‌شود...",
   updateFailed: "بروزرسانی ناموفق بود",
+  goLive: "بازگشت به لحظه‌ای",
 };
 
 export type TranslationKey = keyof typeof EN;

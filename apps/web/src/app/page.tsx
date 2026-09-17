@@ -162,6 +162,14 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
       if (plan.tpPrice > 0) result.push({ id: "plan:tp", price: plan.tpPrice, color: palette.buy, title: "TP", draggable: true, dashed: true });
     }
     for (const p of positions) {
+      // Reference only — an executed entry price can't be moved, so this
+      // isn't draggable (the drag controller already skips hit-testing for
+      // non-draggable lines, see priceLineDrag.ts), but it's rendered the
+      // same way as SL/TP so the position's entry is visible on the chart
+      // at a glance, not just in the positions table.
+      if (p.priceOpen > 0) {
+        result.push({ id: `pos:${p.ticket}:entry`, price: p.priceOpen, color: palette.accent, title: `#${p.ticket}`, draggable: false, dashed: true });
+      }
       if (p.sl > 0) result.push({ id: `pos:${p.ticket}:sl`, price: p.sl, color: palette.sell, title: `#${p.ticket} SL`, draggable: true });
       if (p.tp > 0) result.push({ id: `pos:${p.ticket}:tp`, price: p.tp, color: palette.buy, title: `#${p.ticket} TP`, draggable: true });
     }
@@ -261,6 +269,8 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
               hasMoreHistory={hasMoreHistory}
               loadingOlderBars={loadingOlderBars}
               onRequestOlderBars={handleRequestOlderBars}
+              positions={positions}
+              currency={account?.currency}
             />
           </div>
         </div>
