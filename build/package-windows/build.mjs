@@ -171,7 +171,13 @@ function buildInstaller(version) {
   const outFile = path.join(OUT_DIR, `XAUTrader-Setup-${version}.exe`);
 
   try {
-    execFileSync("makensis", [`/DVERSION=${version}`, `/DSRCDIR=${srcDir}`, `/DOUTFILE=${outFile}`, nsiScript], {
+    // -D, not /D: the Windows-style slash form is accepted by NSIS on
+    // Windows but this Linux build (Ubuntu's `nsis` apt package, v3.10)
+    // only recognizes the dash form — /D... was silently treated as a
+    // positional argument (i.e. mistaken for the script path) instead of a
+    // define, found by actually running this on the dev machine after
+    // installing NSIS, not from docs alone.
+    execFileSync("makensis", [`-DVERSION=${version}`, `-DSRCDIR=${srcDir}`, `-DOUTFILE=${outFile}`, nsiScript], {
       stdio: "inherit",
     });
   } catch (err) {
@@ -181,11 +187,12 @@ function buildInstaller(version) {
           "this dev machine) and re-run `pnpm package` to produce the single-file Windows installer; the raw " +
           `${srcDir} folder is still usable on its own (copy it and run xautrader-bridge.exe directly).`,
       );
-      return;
+      return false;
     }
     throw err;
   }
   console.log(`Installer: ${outFile}`);
+  return true;
 }
 
 // ---- Main ---------------------------------------------------------------
@@ -196,8 +203,8 @@ clean();
 buildBridge();
 buildWeb();
 for (const platform of Object.keys(TARGETS)) fetchPortableNode(platform);
-buildInstaller(rootPkg.version);
+const installerBuilt = buildInstaller(rootPkg.version);
 
 console.log(`\nDone. Output in ${OUT_DIR}/`);
-console.log(`  XAUTrader-Setup-${rootPkg.version}.exe  <- hand this to a tester/client (if makensis was available)`);
+if (installerBuilt) console.log(`  XAUTrader-Setup-${rootPkg.version}.exe  <- hand this to a tester/client`);
 console.log("  win/, linux/                             <- raw self-contained folders (dev use / no-installer platforms)");
