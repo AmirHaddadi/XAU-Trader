@@ -28,6 +28,7 @@
 #include <XAUTrader/Bridge/SocketClient.mqh>
 #include <XAUTrader/Bridge/Protocol.mqh>
 #include <XAUTrader/Bridge/Handlers.mqh>
+#include <XAUTrader/Bridge/LaunchButton.mqh>
 #ifdef XAUT_LEGACY_PANEL
 #include <XAUTrader/Chart/LevelLines.mqh>
 #include <XAUTrader/Chart/PositionLines.mqh>
@@ -42,6 +43,8 @@ input ulong   InpMagicNumber       = 574839201;  // Magic number for orders plac
 input int     InpDeviationPoints   = 20;         // Max price deviation (points) for market orders
 input string  InpBridgeHost        = "127.0.0.1"; // Local web-platform bridge host (never change unless the bridge itself is remote)
 input int     InpBridgePort        = 9443;        // Local web-platform bridge TCP port — must match apps/bridge's EA_TCP_PORT
+input string  InpBridgeExePath     = "";          // Full path to xautrader-bridge.exe (from build/package-windows/out/win) — required for the Launch Platform button
+input int     InpWebPort           = 8788;        // Web dashboard port opened in the browser — must match the packaged bridge's WEB_PORT
 
 COrderManager   g_orderMgr;
 string          g_currency;
@@ -59,6 +62,7 @@ SAppSettings    g_settings;
 // like the legacy panel used to, just over a socket instead of chart events.
 CSocketClient   g_bridge;
 CBridgeHandlers g_bridgeHandlers;
+CLaunchButton   g_launchBtn;
 bool            g_bridgeWasConnected = false;
 
 #define XAUT_TICK_PUSH_MIN_MS 150
@@ -116,7 +120,9 @@ int OnInit()
    EventSetMillisecondTimer(250);
 
    g_bridge.Init(InpBridgeHost, InpBridgePort);
-   g_bridge.TryConnect(); // fine if this fails — OnTimer retries; the bridge may just not be running yet (dev-only in Phase A)
+   g_bridge.TryConnect(); // fine if this fails — the Launch Platform button (or OnTimer, if it's already up) picks it up
+
+   g_launchBtn.Create(ChartID(), InpBridgeExePath, "http://127.0.0.1:" + IntegerToString(InpWebPort));
 
    g_ready = true;
    // Unconditional on attach/reinit (timeframe switch, template reload,
@@ -134,6 +140,7 @@ void OnDeinit(const int reason)
    EventKillTimer();
    ChartSetInteger(0, CHART_MOUSE_SCROLL, true); // never leave chart panning stuck off
    g_bridge.Disconnect();
+   g_launchBtn.Destroy(ChartID());
 #ifdef XAUT_LEGACY_PANEL
    CSettingsStore::Save(g_panel.GetSettings());
    g_lines.Clear();
@@ -173,6 +180,25 @@ void OnTimer()
 #endif
    RenderAll(); // the one place a full repaint actually happens — fixed 4/sec ceiling (legacy panel only; no-op otherwise)
    BridgeMaintain();
+   g_launchBtn.Poll(ChartID(), g_bridge);
+  }
+
+//+------------------------------------------------------------------+
+//| Always active regardless of XAUT_LEGACY_PANEL — the launch button   |
+//| is the one on-chart control that exists either way. Legacy-panel    |
+//| event handling (drag, settings, send/close) is appended below it    |
+//| only when that flag is on.                                          |
+//+------------------------------------------------------------------+
+void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+  {
+   if(!g_ready) return;
+
+   if(id == CHARTEVENT_OBJECT_CLICK && g_launchBtn.HandleClick(ChartID(), sparam, g_bridge))
+      return;
+
+#ifdef XAUT_LEGACY_PANEL
+   OnChartEventLegacyPanel(id, lparam, dparam, sparam);
+#endif
   }
 
 #ifdef XAUT_LEGACY_PANEL
@@ -212,10 +238,8 @@ void FlushPendingPositionModify()
   }
 
 //+------------------------------------------------------------------+
-void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam)
+void OnChartEventLegacyPanel(const int id, const long &lparam, const double &dparam, const string &sparam)
   {
-   if(!g_ready) return;
-
    if(id == CHARTEVENT_OBJECT_DRAG)
      {
       ulong posTicket = 0;

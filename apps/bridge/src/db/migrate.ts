@@ -1,4 +1,4 @@
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { config } from "../config.js";
@@ -6,10 +6,16 @@ import { createLogger } from "../log.js";
 
 const log = createLogger("db");
 
-// Phase A scope: create the schema so later phases (journal UI in Phase C,
-// settings tab in Phase C) have a stable table shape to build against. No
-// CRUD is wired to the WS layer yet — see packages/protocol's journal.* /
-// settings.* message types for the contract this will eventually serve.
+// Uses Node's built-in node:sqlite (stable enough here, and available
+// without qualification since Node 22.5 — this dev machine and the
+// packaged build both pin an exact Node version, so "experimental API"
+// carries none of the usual future-Node-upgrade risk) rather than
+// better-sqlite3. The plan called out better-sqlite3's native addon as the
+// one real risk in Phase D's pkg packaging step, with sql.js (WASM) as the
+// fallback if it proved fragile; node:sqlite removes that risk entirely —
+// nothing to bundle/rebuild, it ships with the Node runtime itself — which
+// only became clear once Phase D's own packaging smoke test surfaced it,
+// so this is a deviation from the original plan text, not an oversight.
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS journal_entries (
   deal_ticket     INTEGER PRIMARY KEY,
@@ -43,13 +49,13 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
-let db: Database.Database | undefined;
+let db: DatabaseSync | undefined;
 
-export function getDb(): Database.Database {
+export function getDb(): DatabaseSync {
   if (db) return db;
   mkdirSync(dirname(config.dbPath), { recursive: true });
-  db = new Database(config.dbPath);
-  db.pragma("journal_mode = WAL");
+  db = new DatabaseSync(config.dbPath);
+  db.exec("PRAGMA journal_mode = WAL");
   db.exec(SCHEMA);
   log.info(`schema ready at ${config.dbPath}`);
   return db;

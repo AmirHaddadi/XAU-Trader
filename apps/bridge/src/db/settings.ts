@@ -23,9 +23,9 @@ export function getSettings(): Settings {
 export function updateSettings(partial: Partial<Settings>): Settings {
   const db = getDb();
   const stmt = db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
-  const tx = db.transaction((entries: [string, unknown][]) => {
-    for (const [key, value] of entries) stmt.run(key, JSON.stringify(value));
-  });
-  tx(Object.entries(partial));
+  // A handful of key=value writes on an infrequent, user-triggered path —
+  // not worth wrapping in an explicit BEGIN/COMMIT (node:sqlite's
+  // DatabaseSync has no better-sqlite3-style `.transaction()` helper).
+  for (const [key, value] of Object.entries(partial)) stmt.run(key, JSON.stringify(value));
   return getSettings();
 }

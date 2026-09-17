@@ -31,5 +31,7 @@ apps/bridge/data/
 .env
 .env.local
 
-# pkg/Windows-exe packaging output (Phase D)
+# pkg/Windows-exe packaging output (Phase D) — out/ is the deliverable,
+# .tmp/ is scratch (bundle intermediates, downloaded Node archives cache)
 build/package-windows/out/
+build/package-windows/.tmp/

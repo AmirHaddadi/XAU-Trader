@@ -10,6 +10,7 @@
     "dev:web": "pnpm --filter @xau-trader/web dev",
     "dev:bridge": "pnpm --filter @xau-trader/bridge dev",
     "build": "pnpm -r build",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "package": "node build/package-windows/build.mjs"
   }
 }

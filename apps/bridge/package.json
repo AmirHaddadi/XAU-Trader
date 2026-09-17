@@ -11,14 +11,14 @@
   },
   "dependencies": {
     "@xau-trader/protocol": "workspace:*",
-    "better-sqlite3": "^11.5.0",
     "dotenv": "^16.4.5",
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.10.1",
     "@types/ws": "^8.5.13",
+    "@yao-pkg/pkg": "^6.22.0",
+    "esbuild": "^0.28.2",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }

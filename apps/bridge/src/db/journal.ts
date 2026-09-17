@@ -1,5 +1,16 @@
+import type { SQLInputValue } from "node:sqlite";
 import type { ClosedDeal, JournalComment } from "@xau-trader/protocol";
 import { getDb } from "./migrate.js";
+
+// node:sqlite's named-param overload wants Record<string, SQLInputValue> —
+// a plain interface (even one whose fields are all individually compatible)
+// has no index signature, so TS won't structurally match it without going
+// through `unknown` first. ClosedDeal's fields are all string/number, both
+// valid SQLInputValue members, so this is a type-system formality, not a
+// real runtime risk.
+function asParams(obj: object): Record<string, SQLInputValue> {
+  return obj as unknown as Record<string, SQLInputValue>;
+}
 
 interface JournalRow {
   deal_ticket: number;
@@ -54,7 +65,7 @@ export function upsertDeal(deal: ClosedDeal): void {
         sl=excluded.sl, tp=excluded.tp, profit=excluded.profit, swap=excluded.swap,
         commission=excluded.commission, magic=excluded.magic, time_open=excluded.time_open, time_close=excluded.time_close`,
     )
-    .run(deal);
+    .run(asParams(deal));
 }
 
 export interface JournalFilter {
@@ -85,15 +96,15 @@ export function listDeals(filter: JournalFilter = {}): ClosedDeal[] {
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
   const rows = getDb()
     .prepare(`SELECT * FROM journal_entries ${where} ORDER BY time_close DESC`)
-    .all(params) as JournalRow[];
+    .all(asParams(params)) as unknown as JournalRow[];
   return rows.map(rowToDeal);
 }
 
 export function getLastKnownDealTicket(): number {
-  const row = getDb().prepare("SELECT MAX(deal_ticket) AS maxTicket FROM journal_entries").get() as {
-    maxTicket: number | null;
-  };
-  return row.maxTicket ?? 0;
+  const row = getDb().prepare("SELECT MAX(deal_ticket) AS maxTicket FROM journal_entries").get() as unknown as
+    | { maxTicket: number | null }
+    | undefined;
+  return row?.maxTicket ?? 0;
 }
 
 interface CommentRow {
@@ -110,7 +121,7 @@ function rowToComment(row: CommentRow): JournalComment {
 export function listComments(dealTicket: number): JournalComment[] {
   const rows = getDb()
     .prepare("SELECT * FROM journal_comments WHERE deal_ticket = ? ORDER BY created_at ASC")
-    .all(dealTicket) as CommentRow[];
+    .all(dealTicket) as unknown as CommentRow[];
   return rows.map(rowToComment);
 }
 

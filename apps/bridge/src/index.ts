@@ -6,6 +6,7 @@ import "./state/journalSync.js";
 import { createHttpServer } from "./http/server.js";
 import { startWsServer } from "./ws/wsServer.js";
 import { getDb } from "./db/migrate.js";
+import { maybeSpawnWebServer } from "./webServerLauncher.js";
 
 const log = createLogger("bridge");
 
@@ -18,6 +19,8 @@ startWsServer(httpServer);
 httpServer.listen(config.httpPort, () => {
   log.info(`http+ws listening on http://127.0.0.1:${config.httpPort}`);
 });
+
+maybeSpawnWebServer(config.webPort); // no-op outside a packaged build — see webServerLauncher.ts
 
 eaLink.on("message", (msg: { type: string }) => log.debug(`EA -> bridge: ${msg.type}`));
 
