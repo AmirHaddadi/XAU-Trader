@@ -49,7 +49,6 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
   const [riskResult, setRiskResult] = useState<RiskResult | undefined>(undefined);
   const [riskError, setRiskError] = useState<string | undefined>(undefined);
   const [previewPending, setPreviewPending] = useState(false);
-  const [busy, setBusy] = useState(false);
   const previewGenRef = useRef(0);
   const appliedSettingsDefaults = useRef(false);
 
@@ -165,15 +164,14 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
   const setPlacement = useCallback((placement: PlacementType) => setPlan((prev) => ({ ...prev, placement })), []);
   const setRrRatio = useCallback((rrRatio: number) => setPlan((prev) => ({ ...prev, rrRatio })), []);
 
+  // No local busy/lock state here — the caller wraps this in
+  // useAsyncAction (see page.tsx), which owns the re-entrancy guard,
+  // pending flag, and error surfacing uniformly across every async action
+  // in the app rather than each hook inventing its own.
   const confirmOrder = useCallback(async (): Promise<OrderAck> => {
-    setBusy(true);
-    try {
-      const ack = await sendOrder(plan);
-      if (ack.ok) cancelReview();
-      return ack;
-    } finally {
-      setBusy(false);
-    }
+    const ack = await sendOrder(plan);
+    if (ack.ok) cancelReview();
+    return ack;
   }, [plan, sendOrder, cancelReview]);
 
   return {
@@ -182,7 +180,6 @@ export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDef
     riskResult,
     riskError,
     previewPending,
-    busy,
     startReview,
     cancelReview,
     setEntryPrice,

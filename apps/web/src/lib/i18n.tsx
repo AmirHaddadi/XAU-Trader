@@ -81,6 +81,10 @@ const EN = {
   grid: "Grid",
   connecting: "Connecting…",
   chartSection: "Chart",
+  orderPlaced: "Order placed",
+  orderFailed: "Order failed",
+  positionClosed: "Position closed",
+  positionCloseFailed: "Failed to close position",
 } as const;
 
 const FA: Record<keyof typeof EN, string> = {
@@ -156,6 +160,10 @@ const FA: Record<keyof typeof EN, string> = {
   grid: "گرید",
   connecting: "در حال اتصال...",
   chartSection: "چارت",
+  orderPlaced: "سفارش ثبت شد",
+  orderFailed: "ثبت سفارش ناموفق بود",
+  positionClosed: "پوزیشن بسته شد",
+  positionCloseFailed: "بستن پوزیشن ناموفق بود",
 };
 
 export type TranslationKey = keyof typeof EN;

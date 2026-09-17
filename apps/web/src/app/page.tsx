@@ -5,8 +5,10 @@ import type { Drawing, DrawingTool } from "@xau-trader/protocol";
 import { useBridgeSocket } from "@/lib/useBridgeSocket";
 import { useTradePlan } from "@/lib/useTradePlan";
 import type { DraggableLine } from "@/lib/priceLineDrag";
-import { I18nProvider } from "@/lib/i18n";
+import { I18nProvider, useI18n } from "@/lib/i18n";
 import { readChartPalette } from "@/lib/theme";
+import { ToastProvider } from "@/lib/toast";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import type { Timeframe } from "@/lib/timeframes";
 import { TopBar } from "@/components/TopBar";
 import { PositionsBar } from "@/components/PositionsBar";
@@ -35,7 +37,9 @@ export default function DashboardPage() {
   return (
     <I18nProvider lang={settings?.lang ?? "en"}>
       <ThemeSync theme={settings?.theme ?? "dark"} lang={settings?.lang ?? "en"} />
-      <Shell bridge={bridge} />
+      <ToastProvider>
+        <Shell bridge={bridge} />
+      </ToastProvider>
     </I18nProvider>
   );
 }
@@ -50,6 +54,7 @@ function ThemeSync({ theme, lang }: { theme: string; lang: string }) {
 }
 
 function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null);
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
@@ -88,7 +93,6 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     riskResult,
     riskError,
     previewPending,
-    busy,
     startReview,
     cancelReview,
     setEntryPrice,
@@ -107,6 +111,13 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     settingsDefaults: settings
       ? { riskMode: settings.riskMode, riskValue: settings.riskValue, placement: settings.placement, rrRatio: settings.rrRatio }
       : undefined,
+  });
+
+  const { run: runConfirmOrder, pending: confirmBusy } = useAsyncAction({
+    action: confirmOrder,
+    successMessage: t("orderPlaced"),
+    resultError: (ack) => (ack.ok ? undefined : ack.message || t("orderFailed")),
+    errorFallbackMessage: t("orderFailed"),
   });
 
   const timeframe = settings?.chartTimeframe ?? "M1";
@@ -256,7 +267,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
           riskResult={riskResult}
           riskError={riskError}
           previewPending={previewPending}
-          busy={busy}
+          busy={confirmBusy}
           currency={account?.currency}
           digits={digits}
           onRiskModeChange={setRiskMode}
@@ -265,13 +276,13 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
           onRrRatioChange={setRrRatio}
           onBuy={() => startReview("buy")}
           onSell={() => startReview("sell")}
-          onConfirm={() => void confirmOrder()}
+          onConfirm={() => void runConfirmOrder()}
           onCancel={cancelReview}
         />
       </div>
 
       <div className={tab === "dashboard" ? "" : "hidden"}>
-        <PositionsBar positions={positions} symbol={symbol} onClose={(ticket) => void closePosition(ticket)} />
+        <PositionsBar positions={positions} symbol={symbol} onClose={closePosition} />
       </div>
 
       {tab === "journal" && (
