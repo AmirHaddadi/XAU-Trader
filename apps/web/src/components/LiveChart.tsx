@@ -95,7 +95,23 @@ export function LiveChart({
     seriesRef.current = series;
     dragRef.current = drag;
     drawRef.current = draw;
+
+    // The chart stays mounted-but-hidden (display:none) on other tabs so
+    // live ticks are never missed (see page.tsx) — but a background reload
+    // that lands while hidden has to skip the coordinate-based reveal
+    // animation entirely (see lib/chartReveal.ts; zero-size panes throw).
+    // Catch up once real layout resumes: re-fit the view the moment the
+    // container actually gets pixels again.
+    let wasVisible = container.clientWidth > 0;
+    const resizeObserver = new ResizeObserver(([entry]) => {
+      const isVisible = entry.contentRect.width > 0;
+      if (isVisible && !wasVisible) chart.timeScale().fitContent();
+      wasVisible = isVisible;
+    });
+    resizeObserver.observe(container);
+
     return () => {
+      resizeObserver.disconnect();
       drag.destroy();
       draw.destroy();
       chart.remove();

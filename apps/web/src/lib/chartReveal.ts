@@ -34,7 +34,31 @@ export function revealBarsAnimated(chart: IChartApi, series: ISeriesApi<"Candles
   }
 
   const full = toCandlestickData(bars);
-  chart.timeScale().setVisibleRange({ from: full[0].time, to: full[full.length - 1].time });
+  const noCancel = () => {
+    cancelled = true;
+  };
+
+  // The dashboard's chart stays mounted-but-hidden (display:none) while
+  // another tab is active (see page.tsx) so live ticks are never missed —
+  // but that means a background reload can now land while the chart has
+  // zero pixel size, and lightweight-charts' coordinate-based APIs throw
+  // "Value is null" against a pane with no laid-out dimensions (found
+  // live, not from docs — includes setVisibleRange, and paneSize() itself
+  // isn't confidently ruled out either, hence the broad try/catch rather
+  // than checking paneSize().width alone). Fall back to a plain, always-
+  // safe setData() rather than crash the page; a ResizeObserver in
+  // LiveChart.tsx calls fitContent() once the chart is visible again to
+  // correct the view.
+  try {
+    if (chart.paneSize().width === 0) {
+      series.setData(full);
+      return noCancel;
+    }
+    chart.timeScale().setVisibleRange({ from: full[0].time, to: full[full.length - 1].time });
+  } catch {
+    series.setData(full);
+    return noCancel;
+  }
 
   const startTime = performance.now();
 
@@ -44,7 +68,17 @@ export function revealBarsAnimated(chart: IChartApi, series: ISeriesApi<"Candles
     const eased = easeOutCubic(rawProgress);
     const stepIndex = Math.max(1, Math.min(STEPS, Math.ceil(eased * STEPS)));
     const count = Math.max(1, Math.round((stepIndex / STEPS) * full.length));
-    series.setData(full.slice(0, count));
+
+    try {
+      series.setData(full.slice(0, count));
+    } catch {
+      // The tab was switched away mid-animation (chart just became
+      // hidden) — stop animating rather than keep throwing every frame;
+      // the ResizeObserver catch-up handles showing the final data once
+      // it's visible again.
+      cancelled = true;
+      return;
+    }
 
     if (rawProgress < 1) {
       requestAnimationFrame(step);
@@ -55,7 +89,5 @@ export function revealBarsAnimated(chart: IChartApi, series: ISeriesApi<"Candles
 
   requestAnimationFrame(step);
 
-  return () => {
-    cancelled = true;
-  };
+  return noCancel;
 }
