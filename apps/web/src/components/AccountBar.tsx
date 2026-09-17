@@ -1,4 +1,5 @@
 import type { AccountSnapshot, SymbolMeta, Tick } from "@xau-trader/protocol";
+import { useI18n } from "@/lib/i18n";
 
 interface AccountBarProps {
   account: AccountSnapshot | undefined;
@@ -16,6 +17,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 export function AccountBar({ account, symbol, tick }: AccountBarProps) {
+  const { t } = useI18n();
   const digits = symbol?.digits ?? 2;
   const fmtPrice = (v: number) => v.toFixed(digits);
   const fmtMoney = (v: number) => `${v.toFixed(2)} ${account?.currency ?? ""}`.trim();
@@ -23,13 +25,13 @@ export function AccountBar({ account, symbol, tick }: AccountBarProps) {
 
   return (
     <div className="flex flex-wrap items-center gap-6 rounded-lg border border-border bg-card px-4 py-3">
-      <Stat label="Bid" value={tick ? fmtPrice(tick.bid) : "—"} />
-      <Stat label="Ask" value={tick ? fmtPrice(tick.ask) : "—"} />
-      <Stat label="Spread" value={spread === "—" ? spread : `${spread} pts`} />
+      <Stat label={t("bid")} value={tick ? fmtPrice(tick.bid) : "—"} />
+      <Stat label={t("ask")} value={tick ? fmtPrice(tick.ask) : "—"} />
+      <Stat label={t("spread")} value={spread === "—" ? spread : `${spread} pts`} />
       <div className="ml-auto flex flex-wrap items-center gap-6">
-        <Stat label="Balance" value={account ? fmtMoney(account.balance) : "—"} />
-        <Stat label="Equity" value={account ? fmtMoney(account.equity) : "—"} />
-        <Stat label="Free Margin" value={account ? fmtMoney(account.freeMargin) : "—"} />
+        <Stat label={t("balance")} value={account ? fmtMoney(account.balance) : "—"} />
+        <Stat label={t("equity")} value={account ? fmtMoney(account.equity) : "—"} />
+        <Stat label={t("freeMargin")} value={account ? fmtMoney(account.freeMargin) : "—"} />
       </div>
     </div>
   );

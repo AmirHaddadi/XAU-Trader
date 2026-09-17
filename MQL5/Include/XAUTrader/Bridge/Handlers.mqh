@@ -17,6 +17,7 @@
 #include "../Money/RiskEngine.mqh"
 #include "../Money/SymbolInfoCache.mqh"
 #include "../Trading/OrderManager.mqh"
+#include "HistoryScanner.mqh"
 
 //--- 350ms position-modify coalescing — mirrors XAU_Trader.mq5's
 //--- pre-existing g_posModify* pattern for native chart-line dragging; same
@@ -32,6 +33,8 @@ private:
    double m_modifySl;
    double m_modifyTp;
    ulong  m_lastModifyFlushMs;
+
+   CHistoryScanner m_history;
 
 public:
    CBridgeHandlers()
@@ -78,6 +81,11 @@ public:
          return HandleOrderClose(client, orderMgr, reqId, line);
       if(msgType == "order.cancel")
          return HandleOrderCancel(client, orderMgr, reqId, line);
+      if(msgType == "history.request")
+        {
+         HandleHistoryRequest(client, symbol, reqId, line);
+         return false;
+        }
 
       // Unknown/not-yet-implemented message type — log and move on rather
       // than dropping the connection over a forward-compatibility gap.
@@ -109,7 +117,24 @@ public:
       return ok;
      }
 
+   //--- Call periodically (e.g. every 1000ms, same cadence as the position
+   //--- scan) — pushes any newly-closed deals as a journal update.
+   void PushNewDeals(CSocketClient &client, const string symbol)
+     {
+      SClosedDeal deals[];
+      if(m_history.ScanNew(symbol, deals) > 0)
+         client.SendLine(CProtocol::BuildHistoryNewDeals(deals));
+     }
+
 private:
+   void HandleHistoryRequest(CSocketClient &client, const string symbol, const string reqId, const string line)
+     {
+      ulong sinceTicket = CProtocol::ReadHistoryRequestSinceTicket(line);
+      SClosedDeal deals[];
+      m_history.ScanSinceTicket(symbol, sinceTicket, deals);
+      client.SendLine(CProtocol::BuildHistoryData(reqId, deals));
+     }
+
    void HandleBarsRequest(CSocketClient &client, const string line)
      {
       string reqId     = CJsonUtils::ExtractReqId(line);

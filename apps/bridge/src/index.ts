@@ -2,6 +2,7 @@ import { config } from "./config.js";
 import { createLogger } from "./log.js";
 import { eaLink } from "./tcp/eaLink.js";
 import "./state/liveState.js";
+import "./state/journalSync.js";
 import { createHttpServer } from "./http/server.js";
 import { startWsServer } from "./ws/wsServer.js";
 import { getDb } from "./db/migrate.js";

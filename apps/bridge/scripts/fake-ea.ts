@@ -63,8 +63,37 @@ socket.on("data", (chunk) => {
     if (msg.type === "order.modifyPosition") {
       console.log(`[fake-ea] (coalesced, no ack expected) ticket=${msg.payload.ticket} sl=${msg.payload.sl} tp=${msg.payload.tp}`);
     }
+    if (msg.type === "history.request") {
+      const deals = msg.payload.sinceTicket < 500001 ? [fakeDeal(500001)] : [];
+      send({ type: "history.data", reqId: msg.reqId, payload: { deals } });
+    }
   }
 });
+
+function fakeDeal(dealTicket: number) {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    dealTicket,
+    positionTicket: 900001,
+    symbol: "XAUUSD",
+    direction: "buy" as const,
+    volume: 0.2,
+    priceOpen: 2400,
+    priceClose: 2410,
+    sl: 0,
+    tp: 0,
+    profit: 200,
+    swap: -0.5,
+    commission: -1.2,
+    magic: 574839201,
+    timeOpen: now - 3600,
+    timeClose: now,
+  };
+}
+
+// Fires once, a few seconds in, so the "live push" path (as opposed to the
+// history.request backfill path) gets exercised too.
+setTimeout(() => send({ type: "history.newDeals", payload: { deals: [fakeDeal(500002)] } }), 2000);
 
 // A deliberately simplified stand-in for CRiskEngine::Evaluate — enough to
 // exercise the wire protocol's shape, not a reimplementation of the real

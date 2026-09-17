@@ -1,4 +1,5 @@
 import type { PositionInfo, SymbolMeta } from "@xau-trader/protocol";
+import { useI18n } from "@/lib/i18n";
 
 interface PositionsBarProps {
   positions: PositionInfo[];
@@ -10,24 +11,25 @@ interface PositionsBarProps {
 // into LiveChart in page.tsx) — this table is the read-only summary plus
 // the one action a price-line drag can't express: closing the position.
 export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) {
+  const { t } = useI18n();
   const digits = symbol?.digits ?? 2;
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium text-text-primary">Open Positions</h2>
+      <h2 className="text-sm font-medium text-text-primary">{t("openPositions")}</h2>
       {positions.length === 0 ? (
-        <p className="text-sm text-text-muted">No open positions</p>
+        <p className="text-sm text-text-muted">{t("noPositions")}</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs text-text-muted">
-              <th className="pb-1 font-normal">Ticket</th>
-              <th className="pb-1 font-normal">Type</th>
-              <th className="pb-1 font-normal">Volume</th>
-              <th className="pb-1 font-normal">Open</th>
-              <th className="pb-1 font-normal">SL</th>
-              <th className="pb-1 font-normal">TP</th>
-              <th className="pb-1 font-normal text-right">Profit</th>
+              <th className="pb-1 font-normal">{t("ticket")}</th>
+              <th className="pb-1 font-normal">{t("type")}</th>
+              <th className="pb-1 font-normal">{t("volume")}</th>
+              <th className="pb-1 font-normal">{t("entry")}</th>
+              <th className="pb-1 font-normal">{t("sl")}</th>
+              <th className="pb-1 font-normal">{t("tp")}</th>
+              <th className="pb-1 font-normal text-right">{t("profit")}</th>
               <th className="pb-1 font-normal text-right"></th>
             </tr>
           </thead>
@@ -54,7 +56,7 @@ export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) 
                     onClick={() => onClose(p.ticket)}
                     className="rounded border border-border px-2 py-0.5 text-xs text-text-muted hover:text-text-primary"
                   >
-                    Close
+                    {t("close")}
                   </button>
                 </td>
               </tr>

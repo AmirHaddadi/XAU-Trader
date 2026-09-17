@@ -3,12 +3,16 @@ import { WebSocketServer, WebSocket } from "ws";
 import type {
   BridgeToBrowserMessage,
   BrowserToBridgeMessage,
+  ClosedDeal,
   EaBarsData,
   EaOrderAck,
   EaRiskResult,
 } from "@xau-trader/protocol";
 import { eaLink } from "../tcp/eaLink.js";
 import { liveState } from "../state/liveState.js";
+import { journalEvents } from "../state/journalSync.js";
+import { addComment, deleteComment, editComment, listComments, listDeals } from "../db/journal.js";
+import { getSettings, updateSettings } from "../db/settings.js";
 import { createLogger } from "../log.js";
 
 const log = createLogger("ws");
@@ -36,6 +40,7 @@ export function startWsServer(httpServer: HttpServer): void {
     if (liveState.account) send(ws, { type: "account", payload: liveState.account });
     if (liveState.tick) send(ws, { type: "tick", payload: liveState.tick });
     send(ws, { type: "positions", payload: { positions: liveState.positions } });
+    send(ws, { type: "settings.data", payload: getSettings() });
 
     ws.on("message", (raw) => void handleBrowserMessage(ws, raw.toString("utf8")));
     ws.on("close", () => {
@@ -56,6 +61,9 @@ export function startWsServer(httpServer: HttpServer): void {
   // Async, unprompted failures (e.g. a coalesced position-modify that the
   // broker ultimately rejected) — not correlated to any one browser request.
   eaLink.on("error", (msg) => broadcast(clients, msg));
+  // A deal just got journaled (live push or backfill) — tell every tab so an
+  // open Journal view updates without a manual refresh.
+  journalEvents.on("deal", (deal: ClosedDeal) => broadcast(clients, { type: "journal.update", payload: { deals: [deal] } }));
 
   async function handleBrowserMessage(ws: WebSocket, raw: string): Promise<void> {
     let msg: BrowserToBridgeMessage;
@@ -104,10 +112,48 @@ export function startWsServer(httpServer: HttpServer): void {
         eaLink.send({ type: "order.modifyPosition", payload: msg.payload });
         return;
       }
-      default:
-        // Journal and settings land in Phase C — a stray/future message
-        // shouldn't crash the connection either way.
-        send(ws, { type: "error", reqId: msg.reqId, payload: { message: `not implemented yet: ${msg.type}` } });
+      case "journal.request": {
+        const deals = listDeals(msg.payload);
+        send(ws, { type: "journal.data", reqId: msg.reqId, payload: { deals } });
+        return;
+      }
+      case "journal.comments.request": {
+        const comments = listComments(msg.payload.dealTicket);
+        send(ws, { type: "journal.comments", reqId: msg.reqId, payload: { dealTicket: msg.payload.dealTicket, comments } });
+        return;
+      }
+      case "journal.comment.add": {
+        addComment(msg.payload.dealTicket, msg.payload.body);
+        const comments = listComments(msg.payload.dealTicket);
+        send(ws, { type: "journal.comments", reqId: msg.reqId, payload: { dealTicket: msg.payload.dealTicket, comments } });
+        return;
+      }
+      case "journal.comment.edit": {
+        editComment(msg.payload.id, msg.payload.body);
+        return;
+      }
+      case "journal.comment.delete": {
+        deleteComment(msg.payload.id);
+        return;
+      }
+      case "settings.request": {
+        send(ws, { type: "settings.data", reqId: msg.reqId, payload: getSettings() });
+        return;
+      }
+      case "settings.update": {
+        const settings = updateSettings(msg.payload);
+        // Broadcast, not just reply — a second open tab should reflect a
+        // theme/default change too, not just the tab that made it.
+        broadcast(clients, { type: "settings.data", payload: settings });
+        return;
+      }
+      default: {
+        // Every known BrowserToBridgeMessage variant is handled above, so
+        // TS narrows msg to `never` here — this only fires for malformed or
+        // future/unknown input the `as` cast above couldn't actually verify.
+        const unknownMsg = msg as { type?: string; reqId?: string };
+        send(ws, { type: "error", reqId: unknownMsg.reqId, payload: { message: `not implemented yet: ${unknownMsg.type}` } });
+      }
     }
   }
 }

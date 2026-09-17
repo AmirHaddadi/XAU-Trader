@@ -575,5 +575,7 @@ void PushBridgeStateThrottled()
    g_bridge.SendLine(CProtocol::BuildAccount(balance, equity, freeMargin, g_currency));
 
    g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
+
+   g_bridgeHandlers.PushNewDeals(g_bridge, _Symbol);
   }
 //+------------------------------------------------------------------+

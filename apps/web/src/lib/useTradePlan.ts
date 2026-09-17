@@ -22,11 +22,19 @@ function defaultPlan(): TradePlan {
   };
 }
 
+interface SettingsDefaults {
+  riskMode: RiskMode;
+  riskValue: number;
+  placement: PlacementType;
+  rrRatio: number;
+}
+
 interface UseTradePlanArgs {
   tick: Tick | undefined;
   symbol: SymbolMeta | undefined;
   previewRisk: (plan: TradePlan) => Promise<RiskResult>;
   sendOrder: (plan: TradePlan) => Promise<OrderAck>;
+  settingsDefaults?: SettingsDefaults;
 }
 
 // The web equivalent of XAU_Trader.mq5's UpdateData()/SendFromPanel(): seeds
@@ -35,13 +43,24 @@ interface UseTradePlanArgs {
 // relationship, and debounces a risk.preview round-trip on every change.
 // CRiskEngine::Evaluate on the EA side is always the real validation — this
 // is UX responsiveness only, never authoritative.
-export function useTradePlan({ tick, symbol, previewRisk, sendOrder }: UseTradePlanArgs) {
+export function useTradePlan({ tick, symbol, previewRisk, sendOrder, settingsDefaults }: UseTradePlanArgs) {
   const [plan, setPlan] = useState<TradePlan>(defaultPlan());
   const [reviewing, setReviewing] = useState(false);
   const [riskResult, setRiskResult] = useState<RiskResult | undefined>(undefined);
   const [riskError, setRiskError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const previewGenRef = useRef(0);
+  const appliedSettingsDefaults = useRef(false);
+
+  // Applied once, the first time the Settings tab's saved defaults arrive
+  // from the bridge — never again after, so it can't clobber an in-progress
+  // edit just because settings.data happened to re-broadcast (e.g. a second
+  // tab changed an unrelated field).
+  useEffect(() => {
+    if (!settingsDefaults || appliedSettingsDefaults.current || reviewing) return;
+    appliedSettingsDefaults.current = true;
+    setPlan((prev) => ({ ...prev, ...settingsDefaults }));
+  }, [settingsDefaults, reviewing]);
 
   // Live-seed SL/TP defaults (until dragged) and re-infer direction, mirrors
   // UpdateData() running every tick while a plan is being configured.

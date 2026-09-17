@@ -36,6 +36,22 @@ ws.on("open", () => {
     console.log("[fake-browser] -> order.send");
     ws.send(JSON.stringify({ type: "order.send", reqId: "test-3", payload: { plan: testPlan } }));
   }, 1100);
+  setTimeout(() => {
+    console.log("[fake-browser] -> settings.request");
+    ws.send(JSON.stringify({ type: "settings.request", reqId: "test-4", payload: {} }));
+  }, 1400);
+  setTimeout(() => {
+    console.log("[fake-browser] -> settings.update (theme: light)");
+    ws.send(JSON.stringify({ type: "settings.update", payload: { theme: "light" } }));
+  }, 1700);
+  setTimeout(() => {
+    console.log("[fake-browser] -> journal.request (after EA backfill should have landed)");
+    ws.send(JSON.stringify({ type: "journal.request", reqId: "test-5", payload: {} }));
+  }, 3000);
+  setTimeout(() => {
+    console.log("[fake-browser] -> journal.comment.add on deal 500001");
+    ws.send(JSON.stringify({ type: "journal.comment.add", payload: { dealTicket: 500001, body: "Test comment from fake-browser" } }));
+  }, 3300);
 });
 
 ws.on("message", (raw) => {

@@ -6,8 +6,11 @@ import type {
   Bar,
   BridgeToBrowserMessage,
   BrowserToBridgeMessage,
+  ClosedDeal,
+  JournalComment,
   PositionInfo,
   RiskResult,
+  Settings,
   SymbolMeta,
   Tick,
   TradePlan,
@@ -33,6 +36,9 @@ export interface BridgeState {
   bars: Bar[];
   barsTimeframe: string | undefined;
   lastError: string | undefined;
+  settings: Settings | undefined;
+  journalDeals: ClosedDeal[];
+  journalComments: Record<number, JournalComment[]>;
 }
 
 const initialState: BridgeState = {
@@ -45,6 +51,9 @@ const initialState: BridgeState = {
   bars: [],
   barsTimeframe: undefined,
   lastError: undefined,
+  settings: undefined,
+  journalDeals: [],
+  journalComments: {},
 };
 
 function newReqId(): string {
@@ -143,6 +152,26 @@ export function useBridgeSocket() {
         case "error":
           setState((s) => ({ ...s, lastError: msg.payload.message }));
           return;
+        case "settings.data":
+          setState((s) => ({ ...s, settings: msg.payload }));
+          return;
+        case "journal.update":
+          setState((s) => {
+            const byTicket = new Map(s.journalDeals.map((d) => [d.dealTicket, d]));
+            for (const deal of msg.payload.deals) byTicket.set(deal.dealTicket, deal);
+            const journalDeals = [...byTicket.values()].sort((a, b) => b.timeClose - a.timeClose);
+            return { ...s, journalDeals };
+          });
+          return;
+        case "journal.data":
+          setState((s) => ({ ...s, journalDeals: msg.payload.deals }));
+          return;
+        case "journal.comments":
+          setState((s) => ({
+            ...s,
+            journalComments: { ...s.journalComments, [msg.payload.dealTicket]: msg.payload.comments },
+          }));
+          return;
         default:
           return;
       }
@@ -222,6 +251,66 @@ export function useBridgeSocket() {
     [send],
   );
 
+  const updateSettings = useCallback(
+    (partial: Partial<Settings>) => {
+      // Fire-and-forget — the bridge broadcasts the updated settings.data
+      // back to every tab (including this one), which is what actually
+      // updates state; no need to also apply it optimistically here.
+      send({ type: "settings.update", payload: partial });
+    },
+    [send],
+  );
+
+  const requestJournal = useCallback(
+    (filter: { search?: string; from?: number; to?: number } = {}) => {
+      send({ type: "journal.request", payload: filter });
+    },
+    [send],
+  );
+
+  const requestComments = useCallback(
+    (dealTicket: number) => {
+      send({ type: "journal.comments.request", payload: { dealTicket } });
+    },
+    [send],
+  );
+
+  const addJournalComment = useCallback(
+    (dealTicket: number, body: string) => {
+      send({ type: "journal.comment.add", payload: { dealTicket, body } });
+    },
+    [send],
+  );
+
+  const editJournalComment = useCallback(
+    (dealTicket: number, id: number, body: string) => {
+      send({ type: "journal.comment.edit", payload: { id, body } });
+      // No server ack for edit/delete (see wsServer) — update optimistically.
+      setState((s) => ({
+        ...s,
+        journalComments: {
+          ...s.journalComments,
+          [dealTicket]: (s.journalComments[dealTicket] ?? []).map((c) => (c.id === id ? { ...c, body } : c)),
+        },
+      }));
+    },
+    [send],
+  );
+
+  const deleteJournalComment = useCallback(
+    (dealTicket: number, id: number) => {
+      send({ type: "journal.comment.delete", payload: { id } });
+      setState((s) => ({
+        ...s,
+        journalComments: {
+          ...s.journalComments,
+          [dealTicket]: (s.journalComments[dealTicket] ?? []).filter((c) => c.id !== id),
+        },
+      }));
+    },
+    [send],
+  );
+
   return {
     ...state,
     requestBars,
@@ -231,5 +320,11 @@ export function useBridgeSocket() {
     modifyPosition,
     closePosition,
     cancelPending,
+    updateSettings,
+    requestJournal,
+    requestComments,
+    addJournalComment,
+    editJournalComment,
+    deleteJournalComment,
   };
 }

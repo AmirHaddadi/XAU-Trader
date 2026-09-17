@@ -10,6 +10,7 @@
 #include "JsonUtils.mqh"
 #include "../Core/Types.mqh"
 #include "../Core/Defines.mqh"
+#include "HistoryScanner.mqh"
 
 class CProtocol
   {
@@ -112,6 +113,45 @@ public:
       string payload = StringFormat("{\"ok\":%s,\"message\":\"%s\",\"ticket\":%d}",
                                      ok ? "true" : "false", CJsonUtils::Escape(message), ticket);
       return Envelope("order.ack", payload, reqId);
+     }
+
+   static string BuildClosedDealJson(const SClosedDeal &d)
+     {
+      return StringFormat(
+         "{\"dealTicket\":%d,\"positionTicket\":%d,\"symbol\":\"%s\",\"direction\":\"%s\",\"volume\":%.2f,"
+         "\"priceOpen\":%.5f,\"priceClose\":%.5f,\"sl\":%.5f,\"tp\":%.5f,\"profit\":%.2f,\"swap\":%.2f,"
+         "\"commission\":%.2f,\"magic\":%d,\"timeOpen\":%d,\"timeClose\":%d}",
+         d.dealTicket, d.positionTicket, CJsonUtils::Escape(d.symbol), DirectionToString(d.direction), d.volume,
+         d.priceOpen, d.priceClose, d.sl, d.tp, d.profit, d.swap, d.commission, d.magic,
+         (long)d.timeOpen, (long)d.timeClose);
+     }
+
+   static string BuildDealsArray(const SClosedDeal &deals[])
+     {
+      string items = "";
+      int total = ArraySize(deals);
+      for(int i = 0; i < total; i++)
+        {
+         if(i > 0)
+            items += ",";
+         items += BuildClosedDealJson(deals[i]);
+        }
+      return "[" + items + "]";
+     }
+
+   static string BuildHistoryNewDeals(const SClosedDeal &deals[])
+     {
+      return Envelope("history.newDeals", "{\"deals\":" + BuildDealsArray(deals) + "}");
+     }
+
+   static string BuildHistoryData(const string reqId, const SClosedDeal &deals[])
+     {
+      return Envelope("history.data", "{\"deals\":" + BuildDealsArray(deals) + "}", reqId);
+     }
+
+   static ulong ReadHistoryRequestSinceTicket(const string json)
+     {
+      return (ulong)CJsonUtils::ExtractInt(json, "sinceTicket", 0);
      }
 
    // ---- Bridge -> EA readers ---------------------------------------------
