@@ -32,6 +32,22 @@ const [maj, min, pat] = rootPkg.version.split(".").map(Number);
 const next =
   bumpType === "major" ? `${maj + 1}.0.0` : bumpType === "minor" ? `${maj}.${min + 1}.0` : `${maj}.${min}.${pat + 1}`;
 
+// Validated before any file is touched — MetaEditor's compiler rejects
+// "0.x" outright for #property version ("incompatible with MQL5 Market"),
+// confirmed empirically by actually compiling after a bump (0.2, 0.20, and
+// 0.2.0 all warned; 1.20 didn't — it's specifically major=0 that's
+// invalid, not digit count or padding). A bump landing on major 0 can
+// never produce a clean EA compile, so fail loudly up front rather than
+// leaving package.json/version.ts bumped while the EA silently isn't.
+const [nextMajCheck] = next.split(".");
+if (Number(nextMajCheck) < 1) {
+  console.error(
+    `\nERROR: version ${next} has major 0 — MQL5's #property version rejects "0.x" outright. ` +
+      `Use a version with major >= 1 (e.g. "pnpm bump major" from 0.x.x to reach 1.0.0) before bumping.`,
+  );
+  process.exit(1);
+}
+
 console.log(`Bumping version: ${rootPkg.version} -> ${next}`);
 
 // Every npm package in the workspace shares this one version.
@@ -59,13 +75,21 @@ writeFileSync(
 );
 console.log(`  apps/bridge/src/version.ts`);
 
-// MQL5 EA — same literal version string, so "the app's version" means one
-// thing across the whole system rather than an npm number and a separately
-// drifting EA number.
+// MQL5 EA — same version, so "the app's version" means one thing across
+// the whole system rather than an npm number and a separately drifting EA
+// number. One wrinkle: MetaEditor's compiler enforces #property version as
+// exactly MAJOR.MINOR, not full semver (warning 68 otherwise — "must be
+// xxx.yyy", found by actually compiling, not from docs) — gets the
+// truncated two-part form. XAUT_EA_VERSION (a plain string constant, not
+// compiler-checked) gets the full version and is what actually reports
+// over the wire in the bridge "hello" handshake, so nothing user-visible
+// loses patch granularity — only the EA's own Properties-tab display does.
+const [nextMaj, nextMin] = next.split(".");
+const eaPropertyVersion = `${nextMaj}.${nextMin}`;
 const eaPath = path.join(ROOT, "MQL5/Experts/XAU-Trader/XAU_Trader.mq5");
 let ea = readFileSync(eaPath, "utf8");
 const before = ea;
-ea = ea.replace(/#property version\s+"[^"]+"/, `#property version   "${next}"`);
+ea = ea.replace(/#property version\s+"[^"]+"/, `#property version   "${eaPropertyVersion}"`);
 ea = ea.replace(/#define XAUT_EA_VERSION "[^"]+"/, `#define XAUT_EA_VERSION "${next}"`);
 if (ea === before) {
   console.warn(`  WARNING: no #property version / XAUT_EA_VERSION match found in ${eaPath} — EA version left unchanged`);
