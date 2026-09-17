@@ -46,8 +46,40 @@ socket.on("data", (chunk) => {
       });
       send({ type: "bars.data", reqId: msg.reqId, payload: { symbol: msg.payload.symbol, timeframe: msg.payload.timeframe, bars } });
     }
+    if (msg.type === "risk.preview") {
+      send({ type: "risk.result", reqId: msg.reqId, payload: fakeRisk(msg.payload.plan) });
+    }
+    if (msg.type === "order.send") {
+      const risk = fakeRisk(msg.payload.plan);
+      if (risk.code !== "ok") {
+        send({ type: "order.ack", reqId: msg.reqId, payload: { ok: false, message: risk.code } });
+      } else {
+        send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "", ticket: 900001 } });
+      }
+    }
+    if (msg.type === "order.modifyPending" || msg.type === "order.close" || msg.type === "order.cancel") {
+      send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "" } });
+    }
+    if (msg.type === "order.modifyPosition") {
+      console.log(`[fake-ea] (coalesced, no ack expected) ticket=${msg.payload.ticket} sl=${msg.payload.sl} tp=${msg.payload.tp}`);
+    }
   }
 });
+
+// A deliberately simplified stand-in for CRiskEngine::Evaluate — enough to
+// exercise the wire protocol's shape, not a reimplementation of the real
+// broker-valid lot math (that correctness is verified by the MQL5 compile,
+// not this harness).
+function fakeRisk(plan: { riskMode: string; riskValue: number; slPrice: number; tpPrice: number; entryPrice: number }) {
+  if (plan.slPrice <= 0) return { code: "err_sl_missing", lots: 0, rawLots: 0, riskMoney: 0, rewardMoney: 0, rr: 0, marginRequired: 0, message: "" };
+  const entry = plan.entryPrice > 0 ? plan.entryPrice : 2400;
+  const riskMoney = plan.riskMode === "fixed_money" ? plan.riskValue : 10000 * (plan.riskValue / 100);
+  const slDist = Math.abs(entry - plan.slPrice);
+  const lots = Math.max(0.01, Math.round((riskMoney / (slDist * 100)) * 100) / 100);
+  const tpDist = plan.tpPrice > 0 ? Math.abs(entry - plan.tpPrice) : 0;
+  const rewardMoney = tpDist * 100 * lots;
+  return { code: "ok", lots, rawLots: lots, riskMoney, rewardMoney, rr: tpDist > 0 ? rewardMoney / riskMoney : 0, marginRequired: 50, message: "" };
+}
 
 socket.on("error", (err) => console.error("[fake-ea] error:", err.message));
 socket.on("close", () => console.log("[fake-ea] connection closed"));

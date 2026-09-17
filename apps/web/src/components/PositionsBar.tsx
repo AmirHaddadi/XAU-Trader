@@ -3,11 +3,13 @@ import type { PositionInfo, SymbolMeta } from "@xau-trader/protocol";
 interface PositionsBarProps {
   positions: PositionInfo[];
   symbol: SymbolMeta | undefined;
+  onClose: (ticket: number) => void;
 }
 
-// Phase A: read-only mirror of CPositionTracker::ScanSymbol. Drag-to-modify
-// SL/TP and close actions arrive in Phase B alongside order.* wiring.
-export function PositionsBar({ positions, symbol }: PositionsBarProps) {
+// Drag-to-modify SL/TP happens on the chart (see the position lines fed
+// into LiveChart in page.tsx) — this table is the read-only summary plus
+// the one action a price-line drag can't express: closing the position.
+export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) {
   const digits = symbol?.digits ?? 2;
 
   return (
@@ -26,6 +28,7 @@ export function PositionsBar({ positions, symbol }: PositionsBarProps) {
               <th className="pb-1 font-normal">SL</th>
               <th className="pb-1 font-normal">TP</th>
               <th className="pb-1 font-normal text-right">Profit</th>
+              <th className="pb-1 font-normal text-right"></th>
             </tr>
           </thead>
           <tbody>
@@ -44,6 +47,15 @@ export function PositionsBar({ positions, symbol }: PositionsBarProps) {
                   style={{ color: p.profit >= 0 ? "var(--color-buy)" : "var(--color-sell)" }}
                 >
                   {p.profit.toFixed(2)}
+                </td>
+                <td className="py-1.5 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onClose(p.ticket)}
+                    className="rounded border border-border px-2 py-0.5 text-xs text-text-muted hover:text-text-primary"
+                  >
+                    Close
+                  </button>
                 </td>
               </tr>
             ))}

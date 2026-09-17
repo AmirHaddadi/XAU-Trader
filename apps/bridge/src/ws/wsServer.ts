@@ -4,6 +4,8 @@ import type {
   BridgeToBrowserMessage,
   BrowserToBridgeMessage,
   EaBarsData,
+  EaOrderAck,
+  EaRiskResult,
 } from "@xau-trader/protocol";
 import { eaLink } from "../tcp/eaLink.js";
 import { liveState } from "../state/liveState.js";
@@ -51,6 +53,9 @@ export function startWsServer(httpServer: HttpServer): void {
   eaLink.on("account", (msg) => broadcast(clients, msg));
   eaLink.on("symbol", (msg) => broadcast(clients, msg));
   eaLink.on("bar.update", (msg) => broadcast(clients, msg));
+  // Async, unprompted failures (e.g. a coalesced position-modify that the
+  // broker ultimately rejected) — not correlated to any one browser request.
+  eaLink.on("error", (msg) => broadcast(clients, msg));
 
   async function handleBrowserMessage(ws: WebSocket, raw: string): Promise<void> {
     let msg: BrowserToBridgeMessage;
@@ -71,10 +76,37 @@ export function startWsServer(httpServer: HttpServer): void {
         }
         return;
       }
+      case "risk.preview": {
+        try {
+          const res = await eaLink.request<EaRiskResult>({ type: "risk.preview", payload: msg.payload });
+          send(ws, { type: "risk.result", reqId: msg.reqId, payload: res.payload });
+        } catch (err) {
+          send(ws, { type: "error", reqId: msg.reqId, payload: { message: (err as Error).message } });
+        }
+        return;
+      }
+      case "order.send":
+      case "order.modifyPending":
+      case "order.close":
+      case "order.cancel": {
+        try {
+          const res = await eaLink.request<EaOrderAck>({ type: msg.type, payload: msg.payload } as never);
+          send(ws, { type: "order.ack", reqId: msg.reqId, payload: res.payload });
+        } catch (err) {
+          send(ws, { type: "error", reqId: msg.reqId, payload: { message: (err as Error).message } });
+        }
+        return;
+      }
+      case "order.modifyPosition": {
+        // High-frequency drag stream — fire-and-forget, coalesced EA-side
+        // (see CBridgeHandlers). The browser sees the confirmed sl/tp via
+        // the next `positions` push, not a per-message ack.
+        eaLink.send({ type: "order.modifyPosition", payload: msg.payload });
+        return;
+      }
       default:
-        // Order actions, risk preview, journal, and settings land in Phases
-        // B/C — the Phase A web client never sends them, but a stray/future
-        // message shouldn't crash the connection.
+        // Journal and settings land in Phase C — a stray/future message
+        // shouldn't crash the connection either way.
         send(ws, { type: "error", reqId: msg.reqId, payload: { message: `not implemented yet: ${msg.type}` } });
     }
   }

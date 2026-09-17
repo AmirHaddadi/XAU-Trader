@@ -6,8 +6,15 @@
 #property copyright "Copyright 2026, Amirreza Haddadi"
 #property link      "https://github.com/AmirHaddadi/XAU-Trader"
 #property version   "1.11"
-#property description "Real-time position sizing & money-management panel — draw your entry/SL/TP, choose market/limit/stop, and XAU Trader computes broker-valid lots from a %balance, %equity or fixed-$ risk budget."
+#property description "Position sizing & money-management engine for XAUUSD. Drives the local XAU-Trader web platform (bridge + browser dashboard) by default; the legacy on-chart panel can be re-enabled via XAUT_LEGACY_PANEL below for rollback."
 #property strict
+
+// Native on-chart UI (Panel/LevelLines/PositionLines) is retired as of the
+// web re-platform's Phase B — the browser dashboard is the primary UI now.
+// Left compiled-but-disabled (not deleted) for a cheap rollback net through
+// Phase C; uncomment to bring it back. See the approved plan in
+// Evolved-FullStack-NewStack.md / .claude/plans.
+//#define XAUT_LEGACY_PANEL
 
 #resource "\\Fonts\\Vazir-Medium.ttf"
 #resource "\\Fonts\\MiSans-Regular.ttf"
@@ -18,14 +25,16 @@
 #include <XAUTrader/Money/RiskEngine.mqh>
 #include <XAUTrader/Trading/OrderManager.mqh>
 #include <XAUTrader/Trading/PositionTracker.mqh>
+#include <XAUTrader/Bridge/SocketClient.mqh>
+#include <XAUTrader/Bridge/Protocol.mqh>
+#include <XAUTrader/Bridge/Handlers.mqh>
+#ifdef XAUT_LEGACY_PANEL
 #include <XAUTrader/Chart/LevelLines.mqh>
 #include <XAUTrader/Chart/PositionLines.mqh>
 #include <XAUTrader/GUI/Theme.mqh>
 #include <XAUTrader/GUI/Panel.mqh>
 #include <XAUTrader/Config/SettingsStore.mqh>
-#include <XAUTrader/Bridge/SocketClient.mqh>
-#include <XAUTrader/Bridge/Protocol.mqh>
-#include <XAUTrader/Bridge/Handlers.mqh>
+#endif
 
 #define XAUT_EA_VERSION "1.11" // kept in sync with #property version above; reported in the bridge "hello" handshake
 
@@ -34,19 +43,22 @@ input int     InpDeviationPoints   = 20;         // Max price deviation (points)
 input string  InpBridgeHost        = "127.0.0.1"; // Local web-platform bridge host (never change unless the bridge itself is remote)
 input int     InpBridgePort        = 9443;        // Local web-platform bridge TCP port — must match apps/bridge's EA_TCP_PORT
 
-CPanel          g_panel;
 COrderManager   g_orderMgr;
-CLevelLines     g_lines;
-CPositionLines  g_posLines;
-SAppSettings    g_settings;
 string          g_currency;
 bool            g_ready = false;
 
-// Additive, parallel to the native panel above — Phase A of the web
-// re-platform (see Evolved-FullStack-NewStack.md / the approved plan). The
-// bridge socket pushes live data out for a browser dashboard to mirror; it
-// does not yet replace or touch anything the native panel does.
+#ifdef XAUT_LEGACY_PANEL
+CPanel          g_panel;
+CLevelLines     g_lines;
+CPositionLines  g_posLines;
+SAppSettings    g_settings;
+#endif
+
+// The bridge is now the primary front door (see Bridge/Handlers.mqh) —
+// it owns order actions/risk preview via CRiskEngine/COrderManager exactly
+// like the legacy panel used to, just over a socket instead of chart events.
 CSocketClient   g_bridge;
+CBridgeHandlers g_bridgeHandlers;
 bool            g_bridgeWasConnected = false;
 
 #define XAUT_TICK_PUSH_MIN_MS 150
@@ -80,12 +92,13 @@ ulong g_lastPositionScanMs = 0;
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   CSettingsStore::Load(g_settings);
    g_currency = AccountInfoString(ACCOUNT_CURRENCY);
+   g_orderMgr.Init(InpMagicNumber, InpDeviationPoints, "XAU-Trader");
 
+#ifdef XAUT_LEGACY_PANEL
+   CSettingsStore::Load(g_settings);
    g_lines.Init(ChartID());
    g_posLines.Init(ChartID());
-   g_orderMgr.Init(InpMagicNumber, InpDeviationPoints, "XAU-Trader");
 
    if(!g_panel.Create(ChartID(), g_settings))
      {
@@ -98,6 +111,8 @@ int OnInit()
    g_panel.SetPlan(plan);
 
    ChartSetInteger(ChartID(), CHART_EVENT_MOUSE_MOVE, true);
+#endif
+
    EventSetMillisecondTimer(250);
 
    g_bridge.Init(InpBridgeHost, InpBridgePort);
@@ -118,8 +133,9 @@ void OnDeinit(const int reason)
   {
    EventKillTimer();
    ChartSetInteger(0, CHART_MOUSE_SCROLL, true); // never leave chart panning stuck off
-   CSettingsStore::Save(g_panel.GetSettings());
    g_bridge.Disconnect();
+#ifdef XAUT_LEGACY_PANEL
+   CSettingsStore::Save(g_panel.GetSettings());
    g_lines.Clear();
    g_panel.Destroy();
    // Position lines represent real, still-open trades — only a true
@@ -130,6 +146,7 @@ void OnDeinit(const int reason)
    // and reappearing.
    if(reason == REASON_REMOVE || reason == REASON_CHARTCLOSE)
       g_posLines.Clear();
+#endif
   }
 
 //+------------------------------------------------------------------+
@@ -145,15 +162,20 @@ void OnTick()
 void OnTimer()
   {
    if(!g_ready) return;
+#ifdef XAUT_LEGACY_PANEL
    g_panel.ToggleCaret();
    g_panel.ClearArmedState();
+#endif
    UpdateDataThrottled();
    ScanPositionsDataThrottled();
+#ifdef XAUT_LEGACY_PANEL
    FlushPendingPositionModify();
-   RenderAll(); // the one place a full repaint actually happens — fixed 4/sec ceiling
+#endif
+   RenderAll(); // the one place a full repaint actually happens — fixed 4/sec ceiling (legacy panel only; no-op otherwise)
    BridgeMaintain();
   }
 
+#ifdef XAUT_LEGACY_PANEL
 //+------------------------------------------------------------------+
 //| Dragging a real position's SL/TP line fires OBJECT_DRAG on every    |
 //| pixel of mouse movement, not just on release. Sending a real        |
@@ -162,6 +184,8 @@ void OnTimer()
 //| immediately (visually the line already moves natively); the actual  |
 //| server call is throttled, with OnTimer guaranteeing the final       |
 //| dragged value still gets flushed shortly after the user lets go.    |
+//| (Web-driven position drags go through Bridge/Handlers.mqh's own,    |
+//| equivalent 350ms coalescing instead — see CBridgeHandlers.)         |
 //+------------------------------------------------------------------+
 #define XAUT_POS_MODIFY_MIN_MS 350
 ulong  g_lastPosModifyMs = 0;
@@ -300,6 +324,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
          break;
      }
   }
+#endif // XAUT_LEGACY_PANEL
 
 //+------------------------------------------------------------------+
 void UpdateDataThrottled()
@@ -325,7 +350,9 @@ void ScanPositionsDataThrottled()
 void ScanPositionsData()
   {
    CPositionTracker::ScanSymbol(_Symbol, g_lastPositions);
+#ifdef XAUT_LEGACY_PANEL
    g_panel.SetPositions(g_lastPositions);
+#endif
   }
 
 //+------------------------------------------------------------------+
@@ -354,7 +381,10 @@ void ScanAndRenderPositions()
 //+------------------------------------------------------------------+
 void UpdateData()
   {
+   // Always refreshed — the bridge's tick/symbol pushes need it regardless
+   // of whether the legacy panel is active.
    g_lastSym = CSymbolInfoCache::Read(_Symbol);
+#ifdef XAUT_LEGACY_PANEL
    STradePlan plan = g_panel.GetPlan();
 
    double refEntry = (plan.placement == PLACEMENT_MARKET) ? g_lastSym.ask
@@ -391,6 +421,7 @@ void UpdateData()
 
    g_lastResult = CRiskEngine::Evaluate(plan, g_lastSym);
    g_panel.UpdateMarket(g_lastResult, g_lastSym, g_currency);
+#endif
   }
 
 //+------------------------------------------------------------------+
@@ -406,9 +437,12 @@ void Recompute()
 //| The one place that actually repaints: the panel canvas/labels, the   |
 //| planning Entry/SL/TP lines, and every open position's SL/TP lines,   |
 //| all from whatever UpdateData()/ScanPositionsData() last computed.    |
+//| No-op when the legacy panel is disabled — the web dashboard is its   |
+//| own, independently-rendered front end.                               |
 //+------------------------------------------------------------------+
 void RenderAll()
   {
+#ifdef XAUT_LEGACY_PANEL
    g_panel.Draw();
 
    SPalette pal = CTheme::Get(g_panel.GetSettings().theme);
@@ -430,8 +464,10 @@ void RenderAll()
 
    g_posLines.Render(g_lastPositions, pal, g_panel.GetSettings().lang, g_currency,
                       g_lastSym.valid ? g_lastSym.digits : _Digits);
+#endif
   }
 
+#ifdef XAUT_LEGACY_PANEL
 //+------------------------------------------------------------------+
 void SendFromPanel(const ENUM_TRADE_DIR dir)
   {
@@ -470,11 +506,12 @@ void SendFromPanel(const ENUM_TRADE_DIR dir)
    ScanAndRenderPositions();
    Recompute();
   }
+#endif // XAUT_LEGACY_PANEL
 
 //+------------------------------------------------------------------+
-//| Web-platform bridge (Phase A: read-only push — hello/tick/account/  |
-//| symbol/positions out, bars.request in). Fully additive: none of     |
-//| this touches the native panel's data or repaint path above.         |
+//| Web-platform bridge — the primary front door. hello/tick/account/   |
+//| symbol/positions out; bars.request/risk.preview/order.* in, wired    |
+//| into the unchanged CRiskEngine/COrderManager via Bridge/Handlers.mqh.|
 //+------------------------------------------------------------------+
 void BridgeMaintain()
   {
@@ -489,7 +526,19 @@ void BridgeMaintain()
       return;
 
    PushBridgeStateThrottled();
-   PollBridgeInbound();
+
+   bool positionsChanged = false;
+   string lines[];
+   int count = g_bridge.PollLines(lines);
+   for(int i = 0; i < count; i++)
+      if(g_bridgeHandlers.Dispatch(g_bridge, g_orderMgr, _Symbol, lines[i]))
+         positionsChanged = true;
+
+   if(g_bridgeHandlers.FlushPendingModify(g_bridge, g_orderMgr, _Symbol))
+      positionsChanged = true;
+
+   if(positionsChanged)
+      ScanAndRenderPositions();
   }
 
 void SendBridgeHello()
@@ -526,13 +575,5 @@ void PushBridgeStateThrottled()
    g_bridge.SendLine(CProtocol::BuildAccount(balance, equity, freeMargin, g_currency));
 
    g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
-  }
-
-void PollBridgeInbound()
-  {
-   string lines[];
-   int count = g_bridge.PollLines(lines);
-   for(int i = 0; i < count; i++)
-      CBridgeHandlers::Dispatch(g_bridge, lines[i]);
   }
 //+------------------------------------------------------------------+
