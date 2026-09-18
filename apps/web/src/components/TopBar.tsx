@@ -1,7 +1,7 @@
 import type { AccountSnapshot, SymbolMeta, Tick } from "@xau-trader/protocol";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-import { faBookOpen, faChartLine, faGaugeHigh, faGear, faPlug, faSatelliteDish, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import { faBookOpen, faChartLine, faCoins, faGaugeHigh, faGear, faPlug, faSatelliteDish, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { ConnectionBadge } from "./ConnectionBadge";
 
@@ -59,7 +59,7 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
           <span className="rounded bg-card-alt px-1.5 py-0.5 text-xs font-medium text-text-muted">{symbol?.symbol ?? "—"}</span>
         </div>
 
-        <nav className="flex gap-1" role="tablist">
+        <nav className="mb-[5px] flex gap-1" role="tablist">
           {TABS.map(({ id, key, icon }) => (
             <button
               key={id}
@@ -67,11 +67,14 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
               role="tab"
               aria-selected={tab === id}
               onClick={() => onTabChange(id)}
-              className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition-colors duration-150"
-              style={{
-                color: tab === id ? "var(--color-text-primary)" : "var(--color-text-muted)",
-                backgroundColor: tab === id ? "var(--color-card-alt)" : "transparent",
-              }}
+              // Background is a Tailwind class (not inline style) specifically
+              // so hover:bg-card-alt/60 can actually take effect on the
+              // inactive tabs — an inline backgroundColor would always win
+              // over a stylesheet :hover rule regardless of specificity.
+              className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium transition-colors duration-150 ${
+                tab === id ? "bg-card-alt" : "bg-transparent hover:bg-card-alt/60"
+              }`}
+              style={{ color: tab === id ? "var(--color-text-primary)" : "var(--color-text-muted)" }}
             >
               <FontAwesomeIcon icon={icon} className="h-3.5 w-3.5" />
               {t(key)}
@@ -106,6 +109,19 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
             <StatChip label={t("bid")} value={tick ? fmtPrice(tick.bid) : "—"} tone="sell" />
             <StatChip label={t("ask")} value={tick ? fmtPrice(tick.ask) : "—"} tone="buy" />
             <StatChip label={t("spread")} value={spread !== undefined ? `${spread} pts` : "—"} />
+          </div>
+          <div className="ms-auto flex items-center px-3 py-1.5">
+            <span
+              className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold tracking-wide"
+              style={{
+                borderColor: "color-mix(in srgb, var(--color-accent) 45%, var(--color-border))",
+                backgroundColor: "color-mix(in srgb, var(--color-accent) 14%, var(--color-card-alt))",
+                color: "var(--color-accent)",
+              }}
+            >
+              <FontAwesomeIcon icon={faCoins} className="h-3 w-3" />
+              {symbol?.symbol ?? "—"}
+            </span>
           </div>
         </div>
       )}
