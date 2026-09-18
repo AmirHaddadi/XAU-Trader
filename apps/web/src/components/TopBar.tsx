@@ -56,7 +56,6 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
             <FontAwesomeIcon icon={faChartLine} className="h-4 w-4" />
             {t("appTitle")}
           </h1>
-          <span className="rounded bg-card-alt px-1.5 py-0.5 text-xs font-medium text-text-muted">{symbol?.symbol ?? "—"}</span>
         </div>
 
         <nav className="mb-[5px] flex gap-1" role="tablist">
