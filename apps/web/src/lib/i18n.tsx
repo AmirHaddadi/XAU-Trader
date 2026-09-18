@@ -96,6 +96,8 @@ const EN = {
   updateRestarting: "Restarting — reconnecting automatically…",
   updateFailed: "Update failed",
   goLive: "Go Live",
+  chartLoadingData: "Loading market data…",
+  chartWaitingForConnection: "Waiting for connection…",
 } as const;
 
 const FA: Record<keyof typeof EN, string> = {
@@ -186,6 +188,8 @@ const FA: Record<keyof typeof EN, string> = {
   updateRestarting: "در حال راه‌اندازی مجدد — اتصال بصورت خودکار برقرار می‌شود...",
   updateFailed: "بروزرسانی ناموفق بود",
   goLive: "بازگشت به لحظه‌ای",
+  chartLoadingData: "در حال دریافت اطلاعات بازار...",
+  chartWaitingForConnection: "در انتظار اتصال...",
 };
 
 export type TranslationKey = keyof typeof EN;

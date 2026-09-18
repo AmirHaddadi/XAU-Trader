@@ -12,6 +12,7 @@ import { readChartPalette } from "@/lib/theme";
 import { useCandleCountdown } from "@/lib/useCandleCountdown";
 import { applyBarsSilently, revealBarsAnimated, revealOlderBarsAnimated } from "@/lib/chartReveal";
 import { useI18n } from "@/lib/i18n";
+import { ChartLoadingOverlay } from "./ChartLoadingOverlay";
 
 // How close (in bar-index terms) the visible left edge has to get to the
 // start of the currently-loaded data before another history page is
@@ -55,6 +56,9 @@ interface LiveChartProps {
   onRequestOlderBars: () => void;
   positions: PositionInfo[];
   currency: string | undefined;
+  // Drives ChartLoadingOverlay's connected-vs-waiting copy — see there.
+  wsConnected: boolean;
+  eaConnected: boolean;
 }
 
 // Candles from the EA's CopyRates history (full reload on `bars` change) +
@@ -86,6 +90,8 @@ export function LiveChart({
   onRequestOlderBars,
   positions,
   currency,
+  wsConnected,
+  eaConnected,
 }: LiveChartProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -293,6 +299,7 @@ export function LiveChart({
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
+      <ChartLoadingOverlay visible={bars.length === 0} connected={wsConnected && eaConnected} />
       {showGoLive && (
         <button
           type="button"

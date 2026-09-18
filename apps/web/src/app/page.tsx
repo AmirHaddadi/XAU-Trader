@@ -273,6 +273,8 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
               onRequestOlderBars={handleRequestOlderBars}
               positions={positions}
               currency={account?.currency}
+              wsConnected={wsConnected}
+              eaConnected={eaConnected}
             />
           </div>
         </div>

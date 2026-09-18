@@ -12,7 +12,8 @@ function toCandlestickData(bars: Bar[]): CandlestickData<Time>[] {
   return bars.map((b) => ({ time: b.time as UTCTimestamp, open: b.open, high: b.high, low: b.low, close: b.close }));
 }
 
-// A genuine "chart builds itself" entrance — candles reveal left-to-right
+// A genuine "chart builds itself" entrance — candles cascade in right-to-
+// left, newest-first, like a row of dominoes toppling back through history,
 // across ~45 eased steps (~1.1s total) rather than the whole dataset
 // appearing in one frame. Fixes the visible time range to the dataset's
 // full span *before* the first step, so candle width/position stay fixed
@@ -70,7 +71,12 @@ export function revealBarsAnimated(chart: IChartApi, series: ISeriesApi<"Candles
     const count = Math.max(1, Math.round((stepIndex / STEPS) * full.length));
 
     try {
-      series.setData(full.slice(0, count));
+      // Keep the most recent `count` bars (the tail of the ascending-sorted
+      // array) — the newest, rightmost candles are what's present from
+      // step 1, and each subsequent step reaches further back into history
+      // (further left), which is what reads as a right-to-left cascade
+      // rather than the dataset simply filling in from the left.
+      series.setData(full.slice(full.length - count));
     } catch {
       // The tab was switched away mid-animation (chart just became
       // hidden) — stop animating rather than keep throwing every frame;
