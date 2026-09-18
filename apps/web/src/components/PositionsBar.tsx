@@ -1,5 +1,7 @@
 import type { OrderAck } from "@/lib/useBridgeSocket";
 import type { PositionInfo, SymbolMeta } from "@xau-trader/protocol";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faListCheck, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useI18n } from "@/lib/i18n";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { Spinner } from "./Spinner";
@@ -19,7 +21,10 @@ export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) 
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium text-text-primary">{t("openPositions")}</h2>
+      <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+        <FontAwesomeIcon icon={faListCheck} className="h-3.5 w-3.5 text-text-muted" />
+        {t("openPositions")}
+      </h2>
       {positions.length === 0 ? (
         <p className="text-sm text-text-muted">{t("noPositions")}</p>
       ) : (
@@ -87,7 +92,7 @@ function PositionRow({ position: p, digits, onClose }: PositionRowProps) {
           onClick={() => void run(p.ticket)}
           className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:enabled:border-sell hover:enabled:text-sell disabled:opacity-50"
         >
-          {pending && <Spinner size={11} />}
+          {pending ? <Spinner size={11} /> : <FontAwesomeIcon icon={faXmark} className="h-3 w-3" />}
           {t("close")}
         </button>
       </td>

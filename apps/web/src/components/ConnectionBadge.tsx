@@ -1,9 +1,13 @@
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+
 interface ConnectionBadgeProps {
   label: string;
   connected: boolean;
+  icon: IconDefinition;
 }
 
-export function ConnectionBadge({ label, connected }: ConnectionBadgeProps) {
+export function ConnectionBadge({ label, connected, icon }: ConnectionBadgeProps) {
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-200"
@@ -13,6 +17,7 @@ export function ConnectionBadge({ label, connected }: ConnectionBadgeProps) {
         color: connected ? "var(--color-buy)" : "var(--color-text-muted)",
       }}
     >
+      <FontAwesomeIcon icon={icon} className="h-3 w-3" />
       <span className="relative flex h-1.5 w-1.5">
         {connected && (
           <span

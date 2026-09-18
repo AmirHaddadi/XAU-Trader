@@ -77,6 +77,10 @@ export function startWsServer(httpServer: HttpServer): void {
     }
 
     switch (msg.type) {
+      case "ping": {
+        send(ws, { type: "pong", reqId: msg.reqId, payload: {} });
+        return;
+      }
       case "bars.request": {
         try {
           const res = await eaLink.request<EaBarsData>({ type: "bars.request", payload: msg.payload });

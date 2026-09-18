@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { ClosedDeal, JournalComment } from "@xau-trader/protocol";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faBookOpen, faComments, faFloppyDisk, faMagnifyingGlass, faPenToSquare, faTrash, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useI18n } from "@/lib/i18n";
 
 interface JournalProps {
@@ -47,14 +49,23 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
     <div className="grid min-h-0 flex-1 grid-cols-[1fr_360px] gap-4">
       <div className="flex min-h-0 flex-col gap-2 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-text-primary">{t("journalTitle")}</h2>
-          <input
-            type="text"
-            placeholder={t("journalSearchPlaceholder")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="w-64 rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary"
-          />
+          <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+            <FontAwesomeIcon icon={faBookOpen} className="h-3.5 w-3.5 text-text-muted" />
+            {t("journalTitle")}
+          </h2>
+          <div className="relative">
+            <FontAwesomeIcon
+              icon={faMagnifyingGlass}
+              className="pointer-events-none absolute start-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-muted"
+            />
+            <input
+              type="text"
+              placeholder={t("journalSearchPlaceholder")}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="w-64 rounded border border-border bg-card-alt py-1.5 ps-8 pe-2 text-sm text-text-primary"
+            />
+          </div>
         </div>
         {deals.length === 0 ? (
           <p className="text-sm text-text-muted">{t("journalEmpty")}</p>
@@ -99,7 +110,10 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
       </div>
 
       <div className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-card p-4">
-        <h2 className="text-sm font-medium text-text-primary">{t("comments")}</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <FontAwesomeIcon icon={faComments} className="h-3.5 w-3.5 text-text-muted" />
+          {t("comments")}
+        </h2>
         {!selectedDeal ? (
           <p className="text-sm text-text-muted">{t("journalEmpty")}</p>
         ) : (
@@ -128,17 +142,23 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
                             onChange={(e) => setEditDraft(e.target.value)}
                           />
                           <div className="flex justify-end gap-2">
-                            <button type="button" className="text-xs text-text-muted" onClick={() => setEditingId(undefined)}>
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 text-xs text-text-muted"
+                              onClick={() => setEditingId(undefined)}
+                            >
+                              <FontAwesomeIcon icon={faXmark} className="h-3 w-3" />
                               {t("cancel")}
                             </button>
                             <button
                               type="button"
-                              className="text-xs text-accent"
+                              className="flex items-center gap-1 text-xs text-accent"
                               onClick={() => {
                                 onEditComment(selectedDeal.dealTicket, c.id, editDraft);
                                 setEditingId(undefined);
                               }}
                             >
+                              <FontAwesomeIcon icon={faFloppyDisk} className="h-3 w-3" />
                               {t("save")}
                             </button>
                           </div>
@@ -151,19 +171,21 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
                             <span className="flex gap-2">
                               <button
                                 type="button"
-                                className="hover:text-text-primary"
+                                className="flex items-center gap-1 hover:text-text-primary"
                                 onClick={() => {
                                   setEditingId(c.id);
                                   setEditDraft(c.body);
                                 }}
                               >
+                                <FontAwesomeIcon icon={faPenToSquare} className="h-3 w-3" />
                                 {t("edit")}
                               </button>
                               <button
                                 type="button"
-                                className="hover:text-text-primary"
+                                className="flex items-center gap-1 hover:text-text-primary"
                                 onClick={() => onDeleteComment(selectedDeal.dealTicket, c.id)}
                               >
+                                <FontAwesomeIcon icon={faTrash} className="h-3 w-3" />
                                 {t("delete")}
                               </button>
                             </span>
@@ -190,9 +212,10 @@ export function Journal({ deals, comments, currency, onSearch, onSelectDeal, onA
                   onAddComment(selectedDeal.dealTicket, draft.trim());
                   setDraft("");
                 }}
-                className="self-end rounded px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 disabled:opacity-40"
+                className="flex items-center gap-1.5 self-end rounded px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150 disabled:opacity-40"
                 style={{ backgroundColor: "var(--color-accent)" }}
               >
+                <FontAwesomeIcon icon={faFloppyDisk} className="h-3 w-3" />
                 {t("save")}
               </button>
             </div>

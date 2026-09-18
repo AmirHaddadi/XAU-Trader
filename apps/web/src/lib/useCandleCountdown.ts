@@ -29,12 +29,20 @@ function formatLabel(remaining: number, periodSeconds: number): string {
 // logic depends on.
 export function useCandleCountdown(liveBar: Bar | undefined, timeframe: string | undefined): CandleCountdown | undefined {
   const [now, setNow] = useState(() => Date.now());
+  // `liveBar` gets a new object identity on every bar.update push (up to a
+  // few times a second, see useBridgeSocket) — depending on the object
+  // itself here would tear down and restart the 1s interval faster than it
+  // ever completes a full tick, so `now` would never actually advance
+  // (looked "frozen a moment after activity starts", reported live).
+  // Depending on presence only means the interval survives live pushes and
+  // only restarts on a genuine mount/unmount or timeframe change.
+  const hasLiveBar = liveBar !== undefined;
 
   useEffect(() => {
-    if (!liveBar || !timeframe) return;
+    if (!hasLiveBar || !timeframe) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [liveBar, timeframe]);
+  }, [hasLiveBar, timeframe]);
 
   if (!liveBar || !timeframe) return undefined;
 

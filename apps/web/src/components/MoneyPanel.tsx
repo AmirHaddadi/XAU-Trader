@@ -1,4 +1,6 @@
 import type { PlacementType, RiskMode, RiskResult, TradePlan } from "@xau-trader/protocol";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faArrowTrendDown, faArrowTrendUp, faCircleCheck, faCoins, faMinus, faPlus, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { validationMessage } from "@/lib/validationMessages";
 import { XAUT_RR_MAX, XAUT_RR_MIN, XAUT_RR_STEP } from "@/lib/tradeDefaults";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
@@ -63,7 +65,10 @@ export function MoneyPanel({
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium text-text-primary">{t("moneyManagement")}</h2>
+      <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+        <FontAwesomeIcon icon={faCoins} className="h-3.5 w-3.5 text-text-muted" />
+        {t("moneyManagement")}
+      </h2>
 
       <div className="grid grid-cols-2 gap-3">
         <label className="flex flex-col gap-1 text-xs text-text-muted">
@@ -113,20 +118,20 @@ export function MoneyPanel({
           <div className="flex items-center gap-1">
             <button
               type="button"
-              className="h-7 w-7 rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
               disabled={plan.rrRatio <= XAUT_RR_MIN}
               onClick={() => onRrRatioChange(Math.max(XAUT_RR_MIN, plan.rrRatio - XAUT_RR_STEP))}
             >
-              −
+              <FontAwesomeIcon icon={faMinus} className="h-3 w-3" />
             </button>
             <span className="flex-1 text-center text-sm tabular-nums text-text-primary">{plan.rrRatio.toFixed(1)}</span>
             <button
               type="button"
-              className="h-7 w-7 rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
               disabled={plan.rrRatio >= XAUT_RR_MAX}
               onClick={() => onRrRatioChange(Math.min(XAUT_RR_MAX, plan.rrRatio + XAUT_RR_STEP))}
             >
-              +
+              <FontAwesomeIcon icon={faPlus} className="h-3 w-3" />
             </button>
           </div>
         </label>
@@ -137,17 +142,19 @@ export function MoneyPanel({
           <button
             type="button"
             onClick={onBuy}
-            className="rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:brightness-110 active:scale-[0.98]"
+            className="flex items-center justify-center gap-2 rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:brightness-110 active:scale-[0.98]"
             style={{ backgroundColor: "var(--color-buy)" }}
           >
+            <FontAwesomeIcon icon={faArrowTrendUp} className="h-3.5 w-3.5" />
             {t("buy")}
           </button>
           <button
             type="button"
             onClick={onSell}
-            className="rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:brightness-110 active:scale-[0.98]"
+            className="flex items-center justify-center gap-2 rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:brightness-110 active:scale-[0.98]"
             style={{ backgroundColor: "var(--color-sell)" }}
           >
+            <FontAwesomeIcon icon={faArrowTrendDown} className="h-3.5 w-3.5" />
             {t("sell")}
           </button>
         </div>
@@ -194,17 +201,19 @@ export function MoneyPanel({
             <button
               type="button"
               onClick={onCancel}
-              className="rounded border border-border py-2 text-sm text-text-primary transition-colors duration-150 hover:bg-card"
+              className="flex items-center justify-center gap-2 rounded border border-border py-2 text-sm text-text-primary transition-colors duration-150 hover:bg-card"
             >
+              <FontAwesomeIcon icon={faXmark} className="h-3.5 w-3.5" />
               {t("cancel")}
             </button>
             <button
               type="button"
               onClick={onConfirm}
               disabled={!canConfirm}
-              className="rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:enabled:brightness-110 active:enabled:scale-[0.98] disabled:opacity-40"
+              className="flex items-center justify-center gap-2 rounded py-2 text-sm font-semibold text-white transition-transform duration-150 hover:enabled:brightness-110 active:enabled:scale-[0.98] disabled:opacity-40"
               style={{ backgroundColor: plan.direction === "buy" ? "var(--color-buy)" : "var(--color-sell)" }}
             >
+              {busy ? <Spinner size={13} /> : <FontAwesomeIcon icon={faCircleCheck} className="h-3.5 w-3.5" />}
               {busy ? t("sending") : t("confirm")}
             </button>
           </div>

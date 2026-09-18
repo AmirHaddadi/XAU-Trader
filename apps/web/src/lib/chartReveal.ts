@@ -92,6 +92,34 @@ export function revealBarsAnimated(chart: IChartApi, series: ISeriesApi<"Candles
   return noCancel;
 }
 
+// Applies a full bars replacement without any animation and without
+// touching the visible range — used when `bars` changed only because a
+// dropped connection resynced (see useBridgeSocket's barsResyncEpoch), not
+// because the user switched symbol/timeframe or asked for anything. The
+// user's pan/zoom position on the chart must survive this untouched; unlike
+// revealBarsAnimated (which deliberately re-fits, appropriate for a genuine
+// fresh load) this captures the current visible range and reasserts it
+// right after the data swap, exactly like revealOlderBarsAnimated's
+// approach but instant since there is no new content to reveal.
+export function applyBarsSilently(chart: IChartApi, series: ISeriesApi<"Candlestick">, bars: Bar[]): void {
+  const full = toCandlestickData(bars);
+  if (full.length === 0) {
+    series.setData(full);
+    return;
+  }
+  try {
+    if (chart.paneSize().width === 0) {
+      series.setData(full);
+      return;
+    }
+    const savedRange = chart.timeScale().getVisibleRange();
+    series.setData(full);
+    if (savedRange) chart.timeScale().setVisibleRange(savedRange);
+  } catch {
+    series.setData(full);
+  }
+}
+
 // History-page entrance — used when the user pans back near the left edge
 // and an older batch of bars lands. Unlike revealBarsAnimated (a fresh
 // load/timeframe switch, where the whole dataset has no "current view" to

@@ -2,6 +2,17 @@
 
 import { useState } from "react";
 import type { AppLang, AppTheme, PlacementType, RiskMode, Settings, UpdateCheckResult, UpdateProgressStage } from "@xau-trader/protocol";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import {
+  faChartArea,
+  faDownload,
+  faGear,
+  faLanguage,
+  faPalette,
+  faRotate,
+  faSliders,
+  faTableCells,
+} from "@fortawesome/free-solid-svg-icons";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { TIMEFRAMES } from "@/lib/timeframes";
@@ -41,10 +52,16 @@ export function SettingsPanel({ settings, onUpdate, onCheckForUpdate, onApplyUpd
   return (
     <div className="flex max-w-xl flex-col gap-6">
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-        <h2 className="text-sm font-medium text-text-primary">{t("settingsTitle")}</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <FontAwesomeIcon icon={faGear} className="h-3.5 w-3.5 text-text-muted" />
+          {t("settingsTitle")}
+        </h2>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-xs text-text-muted">
-            {t("theme")}
+            <span className="flex items-center gap-1.5">
+              <FontAwesomeIcon icon={faPalette} className="h-3 w-3" />
+              {t("theme")}
+            </span>
             <select
               className={SELECT_CLASS}
               value={settings.theme}
@@ -55,7 +72,10 @@ export function SettingsPanel({ settings, onUpdate, onCheckForUpdate, onApplyUpd
             </select>
           </label>
           <label className="flex flex-col gap-1 text-xs text-text-muted">
-            {t("language")}
+            <span className="flex items-center gap-1.5">
+              <FontAwesomeIcon icon={faLanguage} className="h-3 w-3" />
+              {t("language")}
+            </span>
             <select
               className={SELECT_CLASS}
               value={settings.lang}
@@ -69,7 +89,10 @@ export function SettingsPanel({ settings, onUpdate, onCheckForUpdate, onApplyUpd
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-        <h2 className="text-sm font-medium text-text-primary">{t("defaultTradeSettings")}</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <FontAwesomeIcon icon={faSliders} className="h-3.5 w-3.5 text-text-muted" />
+          {t("defaultTradeSettings")}
+        </h2>
         <div className="grid grid-cols-2 gap-3">
           <label className="flex flex-col gap-1 text-xs text-text-muted">
             {t("sizingMode")}
@@ -140,7 +163,10 @@ export function SettingsPanel({ settings, onUpdate, onCheckForUpdate, onApplyUpd
       </div>
 
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-        <h2 className="text-sm font-medium text-text-primary">{t("chartSection")}</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <FontAwesomeIcon icon={faChartArea} className="h-3.5 w-3.5 text-text-muted" />
+          {t("chartSection")}
+        </h2>
         <label className="flex items-center gap-2 text-sm text-text-primary">
           <input
             type="checkbox"
@@ -148,6 +174,7 @@ export function SettingsPanel({ settings, onUpdate, onCheckForUpdate, onApplyUpd
             onChange={(e) => onUpdate({ chartGridVisible: e.target.checked })}
             className="accent-[var(--color-accent)]"
           />
+          <FontAwesomeIcon icon={faTableCells} className="h-3 w-3 text-text-muted" />
           {t("grid")}
         </label>
       </div>
@@ -190,7 +217,10 @@ function UpdateCheckSection({ onCheckForUpdate, onApplyUpdate, updateProgress }:
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-      <h2 className="text-sm font-medium text-text-primary">{t("updatesSection")}</h2>
+      <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
+        <FontAwesomeIcon icon={faDownload} className="h-3.5 w-3.5 text-text-muted" />
+        {t("updatesSection")}
+      </h2>
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-text-muted">
           {applying
@@ -208,7 +238,7 @@ function UpdateCheckSection({ onCheckForUpdate, onApplyUpdate, updateProgress }:
             onClick={onApplyUpdate}
             className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border bg-accent/10 px-3 py-1.5 text-xs font-medium text-accent transition-colors duration-150 hover:enabled:bg-accent/20 disabled:opacity-50"
           >
-            {applying && <Spinner size={11} />}
+            {applying ? <Spinner size={11} /> : <FontAwesomeIcon icon={faRotate} className="h-3 w-3" />}
             {t("installAndRestart")}
           </button>
         ) : (
@@ -218,7 +248,7 @@ function UpdateCheckSection({ onCheckForUpdate, onApplyUpdate, updateProgress }:
             onClick={() => void runCheck().then((res) => res && setLastResult(res))}
             className="inline-flex shrink-0 items-center gap-1.5 rounded border border-border px-3 py-1.5 text-xs text-text-primary transition-colors duration-150 hover:enabled:bg-card-alt disabled:opacity-50"
           >
-            {checking && <Spinner size={11} />}
+            {checking ? <Spinner size={11} /> : <FontAwesomeIcon icon={faDownload} className="h-3 w-3" />}
             {t("checkForUpdates")}
           </button>
         )}

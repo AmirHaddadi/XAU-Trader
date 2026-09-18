@@ -56,6 +56,15 @@ export interface Settings {
 export type WsSettings = WsEnvelope<"settings.data", Settings>;
 export type WsError = WsEnvelope<"error", { message: string }>;
 
+// App-level heartbeat reply. The browser's WebSocket API gives no access to
+// the protocol-level ping/pong frames the browser answers automatically, so
+// a silently-dead connection (network drop with no clean FIN — laptop
+// sleep/wake, wifi loss) can leave `readyState === OPEN` with `onclose`
+// never firing, and the existing reconnect loop then never kicks in. This
+// pong is what lets useBridgeSocket's own heartbeat timer detect that case
+// and force a reconnect instead of requiring a manual page refresh.
+export type WsPong = WsEnvelope<"pong", Record<string, never>>;
+
 // Deliberately just a version comparison + a yes/no — never a release URL,
 // asset name, or anything else that would tell a browser-devtools-inspecting
 // user where this app's source lives. That lookup (and the actual
@@ -93,6 +102,7 @@ export type BridgeToBrowserMessage =
   | WsSettings
   | WsUpdateResult
   | WsUpdateProgress
+  | WsPong
   | WsError;
 
 // ---- Browser -> Bridge (requests, correlated by reqId where meaningful) --
@@ -119,6 +129,10 @@ export type BrowserUpdateCheck = WsEnvelope<"update.check", Record<string, never
 // matching response type.
 export type BrowserUpdateApply = WsEnvelope<"update.apply", Record<string, never>>;
 
+// See WsPong above — the client-side half of the connection-liveness
+// heartbeat.
+export type BrowserPing = WsEnvelope<"ping", Record<string, never>>;
+
 export type BrowserToBridgeMessage =
   | BrowserBarsRequest
   | BrowserRiskPreview
@@ -135,4 +149,5 @@ export type BrowserToBridgeMessage =
   | BrowserSettingsUpdate
   | BrowserSettingsRequest
   | BrowserUpdateCheck
-  | BrowserUpdateApply;
+  | BrowserUpdateApply
+  | BrowserPing;

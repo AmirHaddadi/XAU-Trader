@@ -21,6 +21,15 @@ import { BRIDGE_WS_URL } from "./config";
 
 const RECONNECT_DELAY_MS = 1500;
 const REQUEST_TIMEOUT_MS = 5000;
+// App-level heartbeat: the browser's WebSocket API never exposes protocol
+// ping/pong frames to JS, so a network drop with no clean FIN (sleep/wake,
+// wifi loss) can leave `readyState === OPEN` forever with `onclose` never
+// firing — the reconnect loop below then never kicks in and the app looks
+// "connected" but frozen until the user manually refreshes. Sending our own
+// ping and requiring a pong back within this window is what actually
+// detects that case.
+const HEARTBEAT_INTERVAL_MS = 10000;
+const HEARTBEAT_TIMEOUT_MS = 5000;
 
 export interface OrderAck {
   ok: boolean;
@@ -57,6 +66,12 @@ export interface BridgeState {
   // pick the edge-preserving reveal animation over the full-dataset one —
   // see lib/chartReveal.ts.
   barsAppendedOlderCount: number;
+  // Bumped whenever `bars` was just silently replaced by a reconnect resync
+  // (see the connect effect below) rather than a genuine fresh load/
+  // timeframe switch. LiveChart watches this to apply the update without
+  // any animation or view change — the user never asked for this refresh
+  // and their pan/zoom/position on the chart must not move because of it.
+  barsResyncEpoch: number;
   lastError: string | undefined;
   settings: Settings | undefined;
   journalDeals: ClosedDeal[];
@@ -82,6 +97,7 @@ const initialState: BridgeState = {
   hasMoreHistory: true,
   loadingOlderBars: false,
   barsAppendedOlderCount: 0,
+  barsResyncEpoch: 0,
   lastError: undefined,
   settings: undefined,
   journalDeals: [],
@@ -104,6 +120,10 @@ export function useBridgeSocket() {
   const [state, setState] = useState<BridgeState>(initialState);
   const wsRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, (msg: BridgeToBrowserMessage) => void>());
+  // The last "current view" bars.request (offset 0) issued by requestBars —
+  // not history-page requests. Replayed on reconnect to re-establish the
+  // EA-side live subscription; see the connect effect below.
+  const lastBarsRequestRef = useRef<{ symbol: string; timeframe: string; count: number } | undefined>(undefined);
 
   const send = useCallback((msg: BrowserToBridgeMessage) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify(msg));
@@ -131,32 +151,82 @@ export function useBridgeSocket() {
     let cancelled = false;
     let socket: WebSocket | undefined;
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    // Persists across reconnect attempts (unlike the per-attempt locals
+    // inside connect()) — false only for the very first connection ever
+    // made on this page load.
+    let hasConnectedBefore = false;
 
     function connect() {
       if (cancelled) return;
       socket = new WebSocket(BRIDGE_WS_URL);
       wsRef.current = socket;
 
+      // Reset fresh for every connection attempt.
+      let resyncPending = false;
+      let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
+      let heartbeatTimeout: ReturnType<typeof setTimeout> | undefined;
+
+      function stopHeartbeat() {
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+        heartbeatInterval = undefined;
+        heartbeatTimeout = undefined;
+      }
+
+      function startHeartbeat() {
+        heartbeatInterval = setInterval(() => {
+          if (socket?.readyState !== WebSocket.OPEN) return;
+          send({ type: "ping", payload: {} });
+          heartbeatTimeout = setTimeout(() => {
+            // No pong within the window — treat the connection as dead and
+            // force it closed so the reconnect loop below takes over. See
+            // HEARTBEAT_* constants above for why this is necessary at all.
+            socket?.close();
+          }, HEARTBEAT_TIMEOUT_MS);
+        }, HEARTBEAT_INTERVAL_MS);
+      }
+
       // Clears any stale "restarting" progress from a prior update.apply —
       // a fresh connection (first load, or the reconnect after the bridge
       // actually restarted) means whatever that was is over.
-      socket.onopen = () => setState((s) => ({ ...s, wsConnected: true, updateProgress: undefined }));
+      socket.onopen = () => {
+        setState((s) => ({ ...s, wsConnected: true, updateProgress: undefined }));
+        startHeartbeat();
+        // A reconnect (not the first-ever connection): if the bridge
+        // process itself restarted, its in-memory EA-side live bar.update
+        // subscription is gone even though our own `bars`/`liveBar` state
+        // survived client-side — silently re-request the current view so
+        // live candles keep flowing without the user having to switch
+        // timeframe or refresh. Tagged as a resync (resyncPending) so the
+        // bars.data handler below applies it without disturbing the user's
+        // current pan/zoom (see barsResyncEpoch / LiveChart).
+        if (hasConnectedBefore && lastBarsRequestRef.current) {
+          resyncPending = true;
+          send({ type: "bars.request", payload: { ...lastBarsRequestRef.current, offset: 0 } });
+        }
+        hasConnectedBefore = true;
+      };
       socket.onclose = () => {
+        stopHeartbeat();
         setState((s) => ({ ...s, wsConnected: false, eaConnected: false }));
         if (!cancelled) reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
       };
       socket.onerror = () => socket?.close();
       socket.onmessage = (ev) => handleMessage(JSON.parse(ev.data as string) as BridgeToBrowserMessage);
-    }
 
-    function handleMessage(msg: BridgeToBrowserMessage) {
-      if (msg.reqId && pendingRef.current.has(msg.reqId)) {
-        pendingRef.current.get(msg.reqId)!(msg);
-        pendingRef.current.delete(msg.reqId);
-        return;
-      }
+      function handleMessage(msg: BridgeToBrowserMessage) {
+        if (msg.type === "pong") {
+          if (heartbeatTimeout) clearTimeout(heartbeatTimeout);
+          heartbeatTimeout = undefined;
+          return;
+        }
+        if (msg.reqId && pendingRef.current.has(msg.reqId)) {
+          pendingRef.current.get(msg.reqId)!(msg);
+          pendingRef.current.delete(msg.reqId);
+          return;
+        }
 
-      switch (msg.type) {
+        switch (msg.type) {
         case "ea.status":
           setState((s) => ({ ...s, eaConnected: msg.payload.connected }));
           return;
@@ -175,7 +245,26 @@ export function useBridgeSocket() {
         case "bars.data":
           setState((s) => {
             if (msg.payload.offset === 0) {
-              // Initial load / refresh / timeframe switch — full replace.
+              const wasResync = resyncPending;
+              resyncPending = false;
+              if (wasResync && msg.payload.timeframe === s.barsTimeframe) {
+                // Reconnect resync landing for the same view the user is
+                // already looking at — replace the data silently
+                // (barsResyncEpoch bump, not a fresh-load full-fit) so
+                // LiveChart re-applies it without moving the chart. See
+                // the onopen handler above.
+                return {
+                  ...s,
+                  bars: msg.payload.bars,
+                  liveBar: undefined,
+                  hasMoreHistory: true,
+                  loadingOlderBars: false,
+                  barsAppendedOlderCount: 0,
+                  barsResyncEpoch: s.barsResyncEpoch + 1,
+                };
+              }
+              // Initial load / refresh / genuine timeframe or symbol switch
+              // — full replace, chart is allowed to re-fit.
               return {
                 ...s,
                 bars: msg.payload.bars,
@@ -232,6 +321,7 @@ export function useBridgeSocket() {
           return;
         default:
           return;
+        }
       }
     }
 
@@ -241,10 +331,17 @@ export function useBridgeSocket() {
       if (reconnectTimer) clearTimeout(reconnectTimer);
       socket?.close();
     };
-  }, []);
+    // `send` has a stable identity (its own deps are []); listed for
+    // correctness, not because it ever changes and re-runs this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [send]);
 
   const requestBars = useCallback(
     (symbol: string, timeframe: string, count: number, offset = 0) => {
+      // Only the "current view" request (offset 0) is worth replaying on a
+      // reconnect — history pages are opportunistic, not something the live
+      // feed depends on. See lastBarsRequestRef's use in the connect effect.
+      if (offset === 0) lastBarsRequestRef.current = { symbol, timeframe, count };
       if (offset > 0) setState((s) => ({ ...s, loadingOlderBars: true }));
       send({ type: "bars.request", payload: { symbol, timeframe, count, offset } });
     },

@@ -70,6 +70,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     hasMoreHistory,
     loadingOlderBars,
     barsAppendedOlderCount,
+    barsResyncEpoch,
     lastError,
     settings,
     journalDeals,
@@ -255,6 +256,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
             <LiveChart
               bars={bars}
               barsAppendedOlderCount={barsAppendedOlderCount}
+              barsResyncEpoch={barsResyncEpoch}
               liveBar={liveBar}
               timeframe={timeframe}
               gridVisible={gridVisible}

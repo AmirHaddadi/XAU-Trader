@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { Bar, Drawing, DrawingTool, PositionInfo } from "@xau-trader/protocol";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faCircleDot, faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
 import { PriceLineDragController, type DraggableLine } from "@/lib/priceLineDrag";
 import { DrawingLayerController } from "@/lib/drawingTools";
 import { PnlOverlayController } from "@/lib/pnlOverlay";
 import { readChartPalette } from "@/lib/theme";
 import { useCandleCountdown } from "@/lib/useCandleCountdown";
-import { revealBarsAnimated, revealOlderBarsAnimated } from "@/lib/chartReveal";
+import { applyBarsSilently, revealBarsAnimated, revealOlderBarsAnimated } from "@/lib/chartReveal";
 import { useI18n } from "@/lib/i18n";
 
 // How close (in bar-index terms) the visible left edge has to get to the
@@ -32,6 +34,11 @@ interface LiveChartProps {
   // tells the reveal effect below which animation applies. See
   // useBridgeSocket's bars.data handler.
   barsAppendedOlderCount: number;
+  // Bumped by useBridgeSocket whenever `bars` was just silently replaced by
+  // a post-reconnect resync rather than a genuine load/switch — see the
+  // bars-reload effect below, which reads this to skip the reveal
+  // animation and view re-fit entirely for that case.
+  barsResyncEpoch: number;
   liveBar: Bar | undefined;
   timeframe: string | undefined;
   gridVisible: boolean;
@@ -62,6 +69,7 @@ interface LiveChartProps {
 export function LiveChart({
   bars,
   barsAppendedOlderCount,
+  barsResyncEpoch,
   liveBar,
   timeframe,
   gridVisible,
@@ -93,6 +101,11 @@ export function LiveChart({
   // mount (see below).
   const historyGateRef = useRef({ hasMoreHistory, loadingOlderBars });
   historyGateRef.current = { hasMoreHistory, loadingOlderBars };
+  // Tracks the last epoch this component actually reacted to, so the
+  // bars-reload effect below can tell "bars changed because of a resync"
+  // apart from "bars changed because of a genuine load/switch" without the
+  // bridge having to thread that distinction through `bars` itself.
+  const prevResyncEpochRef = useRef(barsResyncEpoch);
 
   const countdown = useCandleCountdown(liveBar, timeframe);
   // Whether the view has been panned/zoomed away from the live edge — see
@@ -228,7 +241,17 @@ export function LiveChart({
   // load/timeframe change), which is what makes a premium staged reveal
   // appropriate here instead of distracting on every tab visit.
   useEffect(() => {
+    const isResync = barsResyncEpoch !== prevResyncEpochRef.current;
+    prevResyncEpochRef.current = barsResyncEpoch;
     if (!chartRef.current || !seriesRef.current || bars.length === 0) return;
+    // A reconnect resync — the data may have refreshed but the user never
+    // asked for this and didn't move; apply it without touching their
+    // current view at all (see the "chart must never reposition itself"
+    // requirement — lib/chartReveal.ts's applyBarsSilently).
+    if (isResync) {
+      applyBarsSilently(chartRef.current, seriesRef.current, bars);
+      return;
+    }
     // A history page landing (older bars prepended while the user pans
     // back) needs a different reveal that preserves their current view —
     // revealBarsAnimated's full-fit behavior would yank the camera to the
@@ -238,7 +261,7 @@ export function LiveChart({
         ? revealOlderBarsAnimated(chartRef.current, seriesRef.current, bars, barsAppendedOlderCount)
         : revealBarsAnimated(chartRef.current, seriesRef.current, bars);
     return cancel;
-  }, [bars, barsAppendedOlderCount]);
+  }, [bars, barsAppendedOlderCount, barsResyncEpoch]);
 
   // Incremental — the actual "live" part of the chart.
   useEffect(() => {
@@ -276,13 +299,13 @@ export function LiveChart({
           onClick={() => chartRef.current?.timeScale().scrollToRealTime()}
           className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-card/90 px-2.5 py-1 text-xs font-medium text-text-primary shadow-sm backdrop-blur-sm transition-colors duration-150 hover:bg-card-alt animate-fade-in-up"
         >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "var(--color-accent)" }} />
+          <FontAwesomeIcon icon={faCircleDot} className="h-3 w-3" style={{ color: "var(--color-accent)" }} />
           {t("goLive")}
         </button>
       )}
       {countdown && (
         <div
-          className="pointer-events-none absolute right-3 top-3 z-10 rounded-md border border-border bg-card/90 px-2 py-1 text-xs tabular-nums backdrop-blur-sm"
+          className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-border bg-card/90 px-2 py-1 text-xs tabular-nums backdrop-blur-sm"
           style={{
             color:
               countdown.urgency === "critical"
@@ -292,6 +315,7 @@ export function LiveChart({
                   : "var(--color-text-muted)",
           }}
         >
+          <FontAwesomeIcon icon={faHourglassHalf} className="h-3 w-3" />
           {timeframe} · {countdown.label}
         </div>
       )}

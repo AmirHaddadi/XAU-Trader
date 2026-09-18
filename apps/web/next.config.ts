@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
   // 127.0.0.1 silently breaks the page (HMR socket refused, app looks
   // frozen). Only affects `next dev`; irrelevant to the packaged build.
   allowedDevOrigins: ["127.0.0.1", "localhost"],
+  // Hides the floating dev-tools indicator (the round "N" badge Next pins to
+  // a corner in dev mode) — this is an always-on desktop dashboard, not a
+  // page being iterated on in a browser tab, and the badge sits on top of
+  // real UI. Dev-only; irrelevant to the packaged production build.
+  devIndicators: false,
   // In a pnpm workspace, Next's file tracer defaults to guessing the
   // monorepo root and can miss hoisted packages (@next/env, @swc/helpers)
   // if it guesses wrong — pointing it at the actual repo root explicitly
