@@ -31,7 +31,7 @@
 //    launch button" design.
 
 import { execFileSync, execSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,10 +43,18 @@ const OUT_DIR = path.join(__dirname, "out");
 const TMP_DIR = path.join(__dirname, ".tmp");
 
 const NODE_VERSION = "22.20.0"; // pinned — verified end-to-end at this exact version, bump deliberately, not casually
-const TARGETS = {
+const ALL_TARGETS = {
   win: { pkgTarget: "node22-win-x64", nodeAsset: "win-x64/node.exe", exeSuffix: ".exe", nodeName: "node.exe" },
   linux: { pkgTarget: "node22-linux-x64", nodeAsset: "linux-x64/node", exeSuffix: "", nodeName: "node" },
 };
+// The "linux" folder is a dev/testing convenience only (see the header
+// comment) — the real deliverable is the Windows installer. Its portable
+// Node download has no cache-validity check (fetchPortableNode below just
+// does existsSync, not a completeness check), so a slow/stalled mirror for
+// it can block the actual release step (buildInstaller) even though
+// nothing about the Windows output depends on it. XAUT_SKIP_LINUX=1 skips
+// it entirely — e.g. when its nodejs.org download mirror is crawling.
+const TARGETS = process.env.XAUT_SKIP_LINUX ? { win: ALL_TARGETS.win } : ALL_TARGETS;
 
 function run(cmd, cwd = REPO_ROOT) {
   console.log(`$ ${cmd}`);
@@ -55,7 +63,16 @@ function run(cmd, cwd = REPO_ROOT) {
 
 function clean() {
   rmSync(OUT_DIR, { recursive: true, force: true });
-  rmSync(TMP_DIR, { recursive: true, force: true });
+  // node-cache specifically survives — it's a download cache keyed by exact
+  // versioned filename (fetchPortableNode's existsSync check), so wiping it
+  // on every clean() just forces a needless ~35-45MB re-download from
+  // nodejs.org per run for no correctness benefit; genuinely useful when
+  // that download is slow (found the hard way: a throttled mirror can turn
+  // one `pnpm package` into 40+ minutes for a file that hasn't changed).
+  const nodeCacheDir = path.join(TMP_DIR, "node-cache");
+  for (const entry of existsSync(TMP_DIR) ? readdirSync(TMP_DIR) : []) {
+    if (path.join(TMP_DIR, entry) !== nodeCacheDir) rmSync(path.join(TMP_DIR, entry), { recursive: true, force: true });
+  }
   mkdirSync(TMP_DIR, { recursive: true });
   for (const platform of Object.keys(TARGETS)) mkdirSync(path.join(OUT_DIR, platform), { recursive: true });
 }
@@ -129,6 +146,16 @@ function nodeDownloadUrl(platform) {
   return { url: `https://nodejs.org/dist/v${NODE_VERSION}/${archiveName}.${archiveExt}`, archiveName, archiveExt };
 }
 
+function archiveIsValid(archivePath, archiveExt) {
+  try {
+    if (archiveExt === "zip") execSync(`unzip -tq "${archivePath}"`, { stdio: "ignore" });
+    else execSync(`tar -tJf "${archivePath}"`, { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function fetchPortableNode(platform) {
   const t = TARGETS[platform];
   const destBinary = path.join(OUT_DIR, platform, t.nodeName);
@@ -139,8 +166,17 @@ function fetchPortableNode(platform) {
   const archivePath = path.join(cacheDir, `${archiveName}.${archiveExt}`);
 
   console.log(`\n=== Portable Node runtime (${platform}) ===`);
+  // existsSync alone doesn't mean *complete* — a prior run killed mid-
+  // download (or interrupted network) leaves a truncated file that would
+  // otherwise be silently "trusted" as cached forever. Verify the archive
+  // actually opens before reusing it; discard and re-download if not.
+  if (existsSync(archivePath) && !archiveIsValid(archivePath, archiveExt)) {
+    console.log(`(cached ${archivePath} is incomplete/corrupt — discarding)`);
+    rmSync(archivePath, { force: true });
+  }
   if (!existsSync(archivePath)) {
     run(`curl -sL -o "${archivePath}" "${url}"`, cacheDir);
+    if (!archiveIsValid(archivePath, archiveExt)) throw new Error(`download of ${url} produced an invalid ${archiveExt} archive`);
   } else {
     console.log(`(using cached ${archivePath})`);
   }

@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Amirreza Haddadi"
 #property link      "https://github.com/AmirHaddadi/XAU-Trader"
-#property version   "1.2"
+#property version   "1.3"
 #property description "Position sizing & money-management engine for XAUUSD. Drives the local XAU-Trader web platform (bridge + browser dashboard) by default; the legacy on-chart panel can be re-enabled via XAUT_LEGACY_PANEL below for rollback."
 #property strict
 // Same source icon as the web dashboard's favicon (apps/web/public/
@@ -40,7 +40,7 @@
 #include <XAUTrader/Config/SettingsStore.mqh>
 #endif
 
-#define XAUT_EA_VERSION "1.2.0" // kept in sync with #property version above; reported in the bridge "hello" handshake
+#define XAUT_EA_VERSION "1.3.0" // kept in sync with #property version above; reported in the bridge "hello" handshake
 
 input ulong   InpMagicNumber       = 574839201;  // Magic number for orders placed by this panel
 input int     InpDeviationPoints   = 20;         // Max price deviation (points) for market orders
@@ -74,7 +74,8 @@ bool            g_bridgeWasConnected = false;
 // the chart's symbol (the normal case) and switches on a web-client
 // symbol.select message (see CBridgeHandlers::HandleSymbolSelect), letting
 // the web dashboard trade XAUUSD/BTCUSD/ETHUSD (see SYMBOL_WATCHLIST in
-// packages/protocol) from one EA instance without needing a second chart.
+// apps/web/src/lib/symbols.ts) from one EA instance without needing a
+// second chart.
 // Only one symbol is ever "active" at a time — switching away hides that
 // symbol's positions/journal from the web view until switched back, exactly
 // like a single-symbol panel always behaved, just now selectable.
