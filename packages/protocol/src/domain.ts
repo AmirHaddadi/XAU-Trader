@@ -132,9 +132,11 @@ export interface JournalComment {
 }
 
 // Chart drawing tools (web-client-only — no MT5 round trip, these never
-// touch the trading engine). trendline/fib use both points; ray uses only
-// the first (a horizontal line from that time to the chart's right edge).
-export type DrawingTool = "trendline" | "ray" | "fib";
+// touch the trading engine). trendline/fib/box use both points (box = two
+// opposite corners); ray is a full bidirectional horizontal line and vline
+// a full-height vertical line, both defined by a single point (vline only
+// uses the point's `time`, its `price` is unused/0).
+export type DrawingTool = "trendline" | "ray" | "fib" | "box" | "vline";
 
 export interface DrawingPoint {
   time: number; // epoch seconds
@@ -145,4 +147,32 @@ export interface Drawing {
   id: string;
   tool: DrawingTool;
   points: DrawingPoint[];
+  // User-chosen override; undefined falls back to the theme's accent color
+  // (existing drawings persisted before this field existed have no color,
+  // so that fallback is also the backward-compatible default).
+  color?: string;
+}
+
+// The 11 CSS custom properties that drive every themeable color in the app
+// (see apps/web/src/app/globals.css) — mirrored here so user color
+// overrides (Settings.customColorsDark/Light) are typed against the same
+// set, never an arbitrary string key.
+export interface ThemeColorTokens {
+  background: string;
+  card: string;
+  cardAlt: string;
+  border: string;
+  textPrimary: string;
+  textMuted: string;
+  accent: string;
+  buy: string;
+  sell: string;
+  warning: string;
+  chartGrid: string;
+  // Candlestick wick/shadow color, independent from the body (buy/sell
+  // above still drives the candle body plus buttons/PnL text/etc project-
+  // wide) — defaults match buy/sell so the out-of-the-box look is
+  // unchanged, but the two are now separately overridable.
+  candleWickUp: string;
+  candleWickDown: string;
 }

@@ -199,6 +199,7 @@ public:
    static double ReadPrice(const string json) { return CJsonUtils::ExtractNumber(json, "price"); }
    static double ReadSl(const string json)    { return CJsonUtils::ExtractNumber(json, "sl"); }
    static double ReadTp(const string json)    { return CJsonUtils::ExtractNumber(json, "tp"); }
+   static double ReadVolume(const string json) { return CJsonUtils::ExtractNumber(json, "volume"); }
 
    static ENUM_RISK_MODE ParseRiskMode(const string s)
      {

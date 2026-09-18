@@ -15,6 +15,7 @@ import type {
   RiskMode,
   RiskResult,
   SymbolMeta,
+  ThemeColorTokens,
   Tick,
   TradePlan,
 } from "./domain.js";
@@ -51,6 +52,18 @@ export interface Settings {
   chartTimeframe: string;
   chartGridVisible: boolean;
   chartDrawings: Drawing[];
+  magnetEnabled: boolean;
+  // Per-theme color overrides (see domain.ts's ThemeColorTokens) — kept
+  // separate per Amir's explicit choice, so a color picked while editing
+  // Dark never leaks into Light (defaults for the two themes are already
+  // quite different — see globals.css).
+  customColorsDark: Partial<ThemeColorTokens>;
+  customColorsLight: Partial<ThemeColorTokens>;
+  // "Pips" here is deliberately just raw symbol.point units (Amir's own
+  // wording: whatever the user enters is treated as points) — 0 is a valid
+  // value (SL exactly at entry).
+  riskFreePips: number;
+  riskFreeConsiderSpread: boolean;
 }
 
 export type WsSettings = WsEnvelope<"settings.data", Settings>;
@@ -113,6 +126,7 @@ export type BrowserOrderSend = WsEnvelope<"order.send", { plan: TradePlan }>;
 export type BrowserOrderModifyPending = WsEnvelope<"order.modifyPending", { ticket: number; price: number; sl: number; tp: number }>;
 export type BrowserOrderModifyPosition = WsEnvelope<"order.modifyPosition", { ticket: number; sl: number; tp: number }>;
 export type BrowserOrderClose = WsEnvelope<"order.close", { ticket: number }>;
+export type BrowserOrderClosePartial = WsEnvelope<"order.closePartial", { ticket: number; volume: number }>;
 export type BrowserOrderCancel = WsEnvelope<"order.cancel", { ticket: number }>;
 
 export type BrowserJournalRequest = WsEnvelope<"journal.request", { search?: string; from?: number; to?: number }>;
@@ -140,6 +154,7 @@ export type BrowserToBridgeMessage =
   | BrowserOrderModifyPending
   | BrowserOrderModifyPosition
   | BrowserOrderClose
+  | BrowserOrderClosePartial
   | BrowserOrderCancel
   | BrowserJournalRequest
   | BrowserJournalCommentAdd

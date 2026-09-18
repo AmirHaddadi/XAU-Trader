@@ -14,6 +14,11 @@ const DEFAULTS: Settings = {
   chartTimeframe: "M1",
   chartGridVisible: true,
   chartDrawings: [],
+  magnetEnabled: false,
+  customColorsDark: {},
+  customColorsLight: {},
+  riskFreePips: 5,
+  riskFreeConsiderSpread: true,
 };
 
 export function getSettings(): Settings {

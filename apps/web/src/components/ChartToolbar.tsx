@@ -1,7 +1,19 @@
 import type { DrawingTool } from "@xau-trader/protocol";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-import { faArrowRightLong, faClockRotateLeft, faSlash, faTableCells, faTrash, faWaveSquare } from "@fortawesome/free-solid-svg-icons";
+import {
+  faArrowPointer,
+  faClockRotateLeft,
+  faFillDrip,
+  faGripLines,
+  faGripLinesVertical,
+  faMagnet,
+  faSlash,
+  faSquare,
+  faTableCells,
+  faTrash,
+  faWaveSquare,
+} from "@fortawesome/free-solid-svg-icons";
 import { TIMEFRAMES, type Timeframe } from "@/lib/timeframes";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 
@@ -10,26 +22,54 @@ interface ChartToolbarProps {
   onTimeframeChange: (tf: Timeframe) => void;
   gridVisible: boolean;
   onGridToggle: () => void;
+  magnetEnabled: boolean;
+  onMagnetToggle: () => void;
   activeTool: DrawingTool | null;
   onToolChange: (tool: DrawingTool | null) => void;
-  hasSelection: boolean;
+  // Explicit multi-select ("Selector") mode — box/marquee-select over the
+  // chart, mutually exclusive with a drawing tool being active.
+  selectMode: boolean;
+  onSelectModeToggle: () => void;
+  selectionCount: number;
   onDeleteSelected: () => void;
+  selectionColor: string;
+  onSelectionColorChange: (color: string) => void;
 }
 
-const TOOL_KEY: Record<DrawingTool, TranslationKey> = { trendline: "toolTrend", ray: "toolRay", fib: "toolFib" };
-const TOOL_ICON: Record<DrawingTool, IconDefinition> = { trendline: faSlash, ray: faArrowRightLong, fib: faWaveSquare };
+const TOOL_KEY: Record<DrawingTool, TranslationKey> = {
+  trendline: "toolTrend",
+  ray: "toolRay",
+  vline: "toolVline",
+  box: "toolBox",
+  fib: "toolFib",
+};
+const TOOL_ICON: Record<DrawingTool, IconDefinition> = {
+  trendline: faSlash,
+  ray: faGripLines,
+  vline: faGripLinesVertical,
+  box: faSquare,
+  fib: faWaveSquare,
+};
+const TOOL_ORDER: DrawingTool[] = ["trendline", "ray", "vline", "box", "fib"];
 
 export function ChartToolbar({
   timeframe,
   onTimeframeChange,
   gridVisible,
   onGridToggle,
+  magnetEnabled,
+  onMagnetToggle,
   activeTool,
   onToolChange,
-  hasSelection,
+  selectMode,
+  onSelectModeToggle,
+  selectionCount,
   onDeleteSelected,
+  selectionColor,
+  onSelectionColorChange,
 }: ChartToolbarProps) {
   const { t } = useI18n();
+  const hasSelection = selectionCount > 0;
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
@@ -55,7 +95,21 @@ export function ChartToolbar({
       <div className="mx-1 h-4 w-px bg-border" aria-hidden />
 
       <div className="flex items-center gap-1" role="group" aria-label="Drawing tools">
-        {(Object.keys(TOOL_KEY) as DrawingTool[]).map((tool) => (
+        <button
+          type="button"
+          onClick={onSelectModeToggle}
+          aria-pressed={selectMode}
+          title={t("toolSelectorHint")}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors duration-150"
+          style={{
+            color: selectMode ? "var(--color-accent)" : "var(--color-text-muted)",
+            backgroundColor: selectMode ? "var(--color-card-alt)" : "transparent",
+          }}
+        >
+          <FontAwesomeIcon icon={faArrowPointer} className="h-3 w-3" />
+          {t("toolSelector")}
+        </button>
+        {TOOL_ORDER.map((tool) => (
           <button
             key={tool}
             type="button"
@@ -72,19 +126,49 @@ export function ChartToolbar({
           </button>
         ))}
         {hasSelection && (
-          <button
-            type="button"
-            onClick={onDeleteSelected}
-            className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors duration-150"
-            style={{ color: "var(--color-sell)" }}
-          >
-            <FontAwesomeIcon icon={faTrash} className="h-3 w-3" />
-            {t("delete")}
-          </button>
+          <>
+            <div className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+            <label
+              title={t("drawingColorHint")}
+              className="relative flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium text-text-muted transition-colors duration-150 hover:bg-card-alt"
+            >
+              <FontAwesomeIcon icon={faFillDrip} className="h-3 w-3" style={{ color: selectionColor }} />
+              {t("color")}
+              <input
+                type="color"
+                value={/^#[0-9a-f]{6}$/i.test(selectionColor) ? selectionColor : "#d97757"}
+                onChange={(e) => onSelectionColorChange(e.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={onDeleteSelected}
+              className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors duration-150"
+              style={{ color: "var(--color-sell)" }}
+            >
+              <FontAwesomeIcon icon={faTrash} className="h-3 w-3" />
+              {t("delete")} ({selectionCount})
+            </button>
+          </>
         )}
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onMagnetToggle}
+          aria-pressed={magnetEnabled}
+          title={t("magnetHint")}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors duration-150"
+          style={{
+            color: magnetEnabled ? "var(--color-accent)" : "var(--color-text-muted)",
+            backgroundColor: magnetEnabled ? "var(--color-card-alt)" : "transparent",
+          }}
+        >
+          <FontAwesomeIcon icon={faMagnet} className="h-3 w-3" />
+          {t("magnet")}
+        </button>
         <label className="flex items-center gap-1.5 text-xs text-text-muted">
           <input type="checkbox" checked={gridVisible} onChange={onGridToggle} className="accent-[var(--color-accent)]" />
           <FontAwesomeIcon icon={faTableCells} className="h-3 w-3" />

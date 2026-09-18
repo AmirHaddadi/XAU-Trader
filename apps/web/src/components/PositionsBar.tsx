@@ -1,21 +1,26 @@
+import { useState } from "react";
 import type { OrderAck } from "@/lib/useBridgeSocket";
 import type { PositionInfo, SymbolMeta } from "@xau-trader/protocol";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
-import { faListCheck, faXmark } from "@fortawesome/free-solid-svg-icons";
+import { faListCheck, faPercent, faShieldHalved, faXmark } from "@fortawesome/free-solid-svg-icons";
 import { useI18n } from "@/lib/i18n";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { Spinner } from "./Spinner";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 interface PositionsBarProps {
   positions: PositionInfo[];
   symbol: SymbolMeta | undefined;
   onClose: (ticket: number) => Promise<OrderAck>;
+  onClosePartial: (ticket: number, volume: number) => Promise<OrderAck>;
+  onRiskFree: (position: PositionInfo) => void;
 }
 
 // Drag-to-modify SL/TP happens on the chart (see the position lines fed
 // into LiveChart in page.tsx) — this table is the read-only summary plus
-// the one action a price-line drag can't express: closing the position.
-export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) {
+// the actions a price-line drag can't express: closing the position (in
+// full or half), and the one-click Risk-Free SL move.
+export function PositionsBar({ positions, symbol, onClose, onClosePartial, onRiskFree }: PositionsBarProps) {
   const { t } = useI18n();
   const digits = symbol?.digits ?? 2;
 
@@ -43,7 +48,7 @@ export function PositionsBar({ positions, symbol, onClose }: PositionsBarProps) 
           </thead>
           <tbody>
             {positions.map((p) => (
-              <PositionRow key={p.ticket} position={p} digits={digits} onClose={onClose} />
+              <PositionRow key={p.ticket} position={p} digits={digits} onClose={onClose} onClosePartial={onClosePartial} onRiskFree={onRiskFree} />
             ))}
           </tbody>
         </table>
@@ -56,6 +61,8 @@ interface PositionRowProps {
   position: PositionInfo;
   digits: number;
   onClose: (ticket: number) => Promise<OrderAck>;
+  onClosePartial: (ticket: number, volume: number) => Promise<OrderAck>;
+  onRiskFree: (position: PositionInfo) => void;
 }
 
 // Split out from the table body so each row owns its own close-in-flight
@@ -63,11 +70,21 @@ interface PositionRowProps {
 // callback directly, and per-row pending (rather than one flag for the
 // whole table) means closing one position doesn't disable every other
 // row's button too.
-function PositionRow({ position: p, digits, onClose }: PositionRowProps) {
+function PositionRow({ position: p, digits, onClose, onClosePartial, onRiskFree }: PositionRowProps) {
   const { t } = useI18n();
+  const [confirmingHalfClose, setConfirmingHalfClose] = useState(false);
+
   const { run, pending } = useAsyncAction({
     action: onClose,
     successMessage: t("positionClosed"),
+    resultError: (ack) => (ack.ok ? undefined : ack.message || t("positionCloseFailed")),
+    errorFallbackMessage: t("positionCloseFailed"),
+  });
+
+  const halfVolume = p.volume / 2;
+  const { run: runHalfClose, pending: halfClosePending } = useAsyncAction({
+    action: () => onClosePartial(p.ticket, halfVolume),
+    successMessage: t("positionHalfClosed"),
     resultError: (ack) => (ack.ok ? undefined : ack.message || t("positionCloseFailed")),
     errorFallbackMessage: t("positionCloseFailed"),
   });
@@ -86,15 +103,46 @@ function PositionRow({ position: p, digits, onClose }: PositionRowProps) {
         {p.profit.toFixed(2)}
       </td>
       <td className="py-1.5 text-right">
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => void run(p.ticket)}
-          className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:enabled:border-sell hover:enabled:text-sell disabled:opacity-50"
-        >
-          {pending ? <Spinner size={11} /> : <FontAwesomeIcon icon={faXmark} className="h-3 w-3" />}
-          {t("close")}
-        </button>
+        <div className="flex items-center justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={() => onRiskFree(p)}
+            title={t("riskFree")}
+            className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:border-accent hover:text-accent"
+          >
+            <FontAwesomeIcon icon={faShieldHalved} className="h-3 w-3" />
+            {t("riskFree")}
+          </button>
+          <button
+            type="button"
+            disabled={halfClosePending}
+            onClick={() => setConfirmingHalfClose(true)}
+            title={t("close50")}
+            className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:enabled:border-warning hover:enabled:text-warning disabled:opacity-50"
+          >
+            {halfClosePending ? <Spinner size={11} /> : <FontAwesomeIcon icon={faPercent} className="h-3 w-3" />}
+            50%
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void run(p.ticket)}
+            className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-0.5 text-xs text-text-muted transition-colors duration-150 hover:enabled:border-sell hover:enabled:text-sell disabled:opacity-50"
+          >
+            {pending ? <Spinner size={11} /> : <FontAwesomeIcon icon={faXmark} className="h-3 w-3" />}
+            {t("close")}
+          </button>
+        </div>
+        <ConfirmDialog
+          open={confirmingHalfClose}
+          title={t("close50")}
+          message={t("confirm50Body").replace("{ticket}", String(p.ticket)).replace("{volume}", halfVolume.toFixed(2))}
+          busy={halfClosePending}
+          onConfirm={() => {
+            void runHalfClose().then(() => setConfirmingHalfClose(false));
+          }}
+          onCancel={() => setConfirmingHalfClose(false)}
+        />
       </td>
     </tr>
   );

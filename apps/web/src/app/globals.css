@@ -28,6 +28,10 @@
   --color-sell: #d25a47;
   --color-warning: #d9a757;
   --color-chart-grid: #363531;
+  /* Wick/shadow color, independent of the body (--color-buy/--color-sell
+     above) — defaults match the body so the stock look is unchanged. */
+  --color-candle-wick-up: #56a87b;
+  --color-candle-wick-down: #d25a47;
 }
 
 :root[data-theme="light"] {
@@ -42,6 +46,8 @@
   --color-sell: #c15f3c;
   --color-warning: #b8863f;
   --color-chart-grid: #e9e7dd;
+  --color-candle-wick-up: #3e8e5a;
+  --color-candle-wick-down: #c15f3c;
 }
 
 @theme inline {
@@ -90,6 +96,42 @@ body {
 }
 .animate-fade-in-up {
   animation: fade-in-up 180ms ease-out;
+}
+
+/* Toast entrance — drops in from above and settles, matching the toast
+   stack's top-right anchor (moved there from bottom-right for visibility).
+   A touch more travel/spring than fade-in-up since a toast needs to read
+   as a deliberate, eye-catching arrival, not a subtle fade. */
+@keyframes toast-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-toast-in-down {
+  animation: toast-in-down 240ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Exit — mirrors the entrance (fade + a touch of motion), so appearing and
+   disappearing both read as one smooth, deliberate transition rather than
+   an instant pop in either direction. Duration must match
+   lib/toast.tsx's EXIT_DURATION_MS. */
+@keyframes toast-out-up {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+}
+.animate-toast-out-up {
+  animation: toast-out-up 220ms ease-in forwards;
 }
 
 /* Real spinner ("چرخش") for an in-flight risk.preview recalculation — the

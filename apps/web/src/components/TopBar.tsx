@@ -1,7 +1,18 @@
-import type { AccountSnapshot, SymbolMeta, Tick } from "@xau-trader/protocol";
+import type { AccountSnapshot, AppTheme, SymbolMeta, Tick } from "@xau-trader/protocol";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
-import { faBookOpen, faChartLine, faCoins, faGaugeHigh, faGear, faPlug, faSatelliteDish, faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
+import {
+  faBookOpen,
+  faChartLine,
+  faCoins,
+  faGaugeHigh,
+  faGear,
+  faMoon,
+  faPlug,
+  faSatelliteDish,
+  faSun,
+  faTriangleExclamation,
+} from "@fortawesome/free-solid-svg-icons";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
 import { ConnectionBadge } from "./ConnectionBadge";
 
@@ -21,6 +32,8 @@ interface TopBarProps {
   lastError: string | undefined;
   account: AccountSnapshot | undefined;
   tick: Tick | undefined;
+  theme: AppTheme;
+  onThemeToggle: () => void;
 }
 
 function StatChip({ label, value, tone }: { label: string; value: string; tone?: "buy" | "sell" }) {
@@ -41,7 +54,7 @@ function StatChip({ label, value, tone }: { label: string; value: string; tone?:
 // AccountBar into one organized, badged status block — connection state,
 // account stats and market stats are visually grouped as distinct
 // categories rather than one flat row (Fix-Bugs.md item 6).
-export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, lastError, account, tick }: TopBarProps) {
+export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, lastError, account, tick, theme, onThemeToggle }: TopBarProps) {
   const { t } = useI18n();
   const digits = symbol?.digits ?? 2;
   const fmtPrice = (v: number) => v.toFixed(digits);
@@ -82,6 +95,14 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onThemeToggle}
+            title={t(theme === "dark" ? "themeSwitchToLight" : "themeSwitchToDark")}
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-border text-text-muted transition-colors duration-150 hover:bg-card-alt hover:text-text-primary"
+          >
+            <FontAwesomeIcon icon={theme === "dark" ? faSun : faMoon} className="h-3.5 w-3.5" />
+          </button>
           {lastError && (
             <span
               className="flex max-w-64 items-center gap-1.5 truncate text-xs"

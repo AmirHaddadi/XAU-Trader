@@ -102,6 +102,7 @@ export function startWsServer(httpServer: HttpServer): void {
       case "order.send":
       case "order.modifyPending":
       case "order.close":
+      case "order.closePartial":
       case "order.cancel": {
         try {
           const res = await eaLink.request<EaOrderAck>({ type: msg.type, payload: msg.payload } as never);

@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Drawing, DrawingTool } from "@xau-trader/protocol";
+import type { Drawing, DrawingTool, PositionInfo, ThemeColorTokens } from "@xau-trader/protocol";
 import { useBridgeSocket } from "@/lib/useBridgeSocket";
 import { useTradePlan } from "@/lib/useTradePlan";
 import type { DraggableLine } from "@/lib/priceLineDrag";
 import { I18nProvider, useI18n } from "@/lib/i18n";
 import { readChartPalette } from "@/lib/theme";
-import { ToastProvider } from "@/lib/toast";
+import { applyCustomColors } from "@/lib/applyCustomColors";
+import { ToastProvider, useToast } from "@/lib/toast";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import type { Timeframe } from "@/lib/timeframes";
 import { TopBar } from "@/components/TopBar";
@@ -36,7 +37,12 @@ export default function DashboardPage() {
 
   return (
     <I18nProvider lang={settings?.lang ?? "en"}>
-      <ThemeSync theme={settings?.theme ?? "dark"} lang={settings?.lang ?? "en"} />
+      <ThemeSync
+        theme={settings?.theme ?? "dark"}
+        lang={settings?.lang ?? "en"}
+        customColorsDark={settings?.customColorsDark}
+        customColorsLight={settings?.customColorsLight}
+      />
       <ToastProvider>
         <Shell bridge={bridge} />
       </ToastProvider>
@@ -44,20 +50,33 @@ export default function DashboardPage() {
   );
 }
 
-function ThemeSync({ theme, lang }: { theme: string; lang: string }) {
+function ThemeSync({
+  theme,
+  lang,
+  customColorsDark,
+  customColorsLight,
+}: {
+  theme: string;
+  lang: string;
+  customColorsDark: Partial<ThemeColorTokens> | undefined;
+  customColorsLight: Partial<ThemeColorTokens> | undefined;
+}) {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.lang = lang;
     document.documentElement.dir = lang === "fa" ? "rtl" : "ltr";
-  }, [theme, lang]);
+    applyCustomColors(theme === "light" ? customColorsLight : customColorsDark);
+  }, [theme, lang, customColorsDark, customColorsLight]);
   return null;
 }
 
 function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   const { t } = useI18n();
+  const toast = useToast();
   const [tab, setTab] = useState<Tab>("dashboard");
   const [activeDrawingTool, setActiveDrawingTool] = useState<DrawingTool | null>(null);
-  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedDrawingIds, setSelectedDrawingIds] = useState<string[]>([]);
   const {
     wsConnected,
     eaConnected,
@@ -80,6 +99,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     sendOrder,
     modifyPosition,
     closePosition,
+    closePositionPartial,
     updateSettings,
     requestJournal,
     requestComments,
@@ -127,6 +147,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   const timeframe = settings?.chartTimeframe ?? "M1";
   const gridVisible = settings?.chartGridVisible ?? true;
   const drawings = settings?.chartDrawings ?? [];
+  const magnetEnabled = settings?.magnetEnabled ?? false;
 
   const requestedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -151,10 +172,22 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   }, [positions]);
 
   const digits = symbol?.digits ?? 2;
+  const selectionColor =
+    (selectedDrawingIds.length > 0 && drawings.find((d) => d.id === selectedDrawingIds[0])?.color) || readChartPalette().accent;
 
   const lines = useMemo<DraggableLine[]>(() => {
     const palette = readChartPalette();
     const result: DraggableLine[] = [];
+    // Live Bid/Ask reference lines — always shown (not just while a
+    // position is open), matching a standard trading platform's current-
+    // price indicator. Buy positions close at bid, sell positions close at
+    // ask, so both are worth seeing live, not just one blended "last price"
+    // (which is why the series' own default price line is disabled — see
+    // LiveChart.tsx — in favor of these two explicit ones).
+    if (tick) {
+      result.push({ id: "live:bid", price: tick.bid, color: palette.sell, title: t("bid"), draggable: false, dashed: true });
+      result.push({ id: "live:ask", price: tick.ask, color: palette.buy, title: t("ask"), draggable: false, dashed: true });
+    }
     if (reviewing) {
       if (plan.placement !== "market" && plan.entryPrice > 0) {
         result.push({ id: "plan:entry", price: plan.entryPrice, color: palette.accent, title: "Entry", draggable: true, dashed: true });
@@ -178,7 +211,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     // settings?.theme triggers a recompute so line colors follow a theme
     // switch (readChartPalette() reads the DOM, not this prop directly).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reviewing, plan, positions, settings?.theme]);
+  }, [reviewing, plan, positions, tick, settings?.theme]);
 
   function handlePositionDrag(ticket: number, which: "sl" | "tp", price: number) {
     const current = pendingPosRef.current.get(ticket) ?? { sl: 0, tp: 0 };
@@ -213,10 +246,51 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     setActiveDrawingTool(null);
   }
 
-  function handleDeleteSelectedDrawing() {
-    if (!selectedDrawingId) return;
-    updateSettings({ chartDrawings: drawings.filter((d) => d.id !== selectedDrawingId) });
-    setSelectedDrawingId(null);
+  function handleToolChange(tool: DrawingTool | null) {
+    setActiveDrawingTool(tool);
+    if (tool) setSelectMode(false); // mutually exclusive with the Selector tool
+  }
+
+  function handleSelectModeToggle() {
+    setSelectMode((prev) => {
+      const next = !prev;
+      if (next) setActiveDrawingTool(null);
+      return next;
+    });
+  }
+
+  function handleDeleteSelectedDrawings() {
+    if (selectedDrawingIds.length === 0) return;
+    const idSet = new Set(selectedDrawingIds);
+    updateSettings({ chartDrawings: drawings.filter((d) => !idSet.has(d.id)) });
+    setSelectedDrawingIds([]);
+  }
+
+  function handleSelectionColorChange(color: string) {
+    if (selectedDrawingIds.length === 0) return;
+    const idSet = new Set(selectedDrawingIds);
+    updateSettings({ chartDrawings: drawings.map((d) => (idSet.has(d.id) ? { ...d, color } : d)) });
+  }
+
+  // "Risk-Free": moves a position's SL to entry +/- riskFreePips (raw
+  // symbol.point units, per Amir's own wording), optionally widened by the
+  // live spread so a bid/ask fill gap can't still stop it out right at the
+  // boundary. Reuses the same fire-and-forget modifyPosition path the chart
+  // drag already uses (EA-coalesced, confirmation arrives via the next
+  // positions push) — no ack to await, so this deliberately doesn't go
+  // through useAsyncAction (which needs a Promise); a toast fires
+  // immediately instead, matching how the drag itself gives no per-call
+  // confirmation either.
+  function handleRiskFree(position: PositionInfo) {
+    if (!symbol?.valid) return;
+    const pips = settings?.riskFreePips ?? 0;
+    const considerSpread = settings?.riskFreeConsiderSpread ?? false;
+    const spread = considerSpread && tick ? tick.ask - tick.bid : 0;
+    const distance = pips * symbol.point + spread;
+    const isBuy = position.type === "buy";
+    const sl = isBuy ? position.priceOpen + distance : position.priceOpen - distance;
+    modifyPosition(position.ticket, sl, position.tp);
+    toast.show("success", t("riskFreeApplied"));
   }
 
   return (
@@ -230,6 +304,8 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
         lastError={lastError}
         account={account}
         tick={tick}
+        theme={settings?.theme ?? "dark"}
+        onThemeToggle={() => updateSettings({ theme: settings?.theme === "light" ? "dark" : "light" })}
       />
 
       {/* Always mounted, hidden via CSS rather than conditionally rendered —
@@ -247,10 +323,16 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
             onTimeframeChange={handleTimeframeChange}
             gridVisible={gridVisible}
             onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
+            magnetEnabled={magnetEnabled}
+            onMagnetToggle={() => updateSettings({ magnetEnabled: !magnetEnabled })}
             activeTool={activeDrawingTool}
-            onToolChange={setActiveDrawingTool}
-            hasSelection={selectedDrawingId !== null}
-            onDeleteSelected={handleDeleteSelectedDrawing}
+            onToolChange={handleToolChange}
+            selectMode={selectMode}
+            onSelectModeToggle={handleSelectModeToggle}
+            selectionCount={selectedDrawingIds.length}
+            onDeleteSelected={handleDeleteSelectedDrawings}
+            selectionColor={selectionColor}
+            onSelectionColorChange={handleSelectionColorChange}
           />
           <div className="min-h-0 flex-1 p-2">
             <LiveChart
@@ -261,18 +343,23 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
               timeframe={timeframe}
               gridVisible={gridVisible}
               theme={settings?.theme ?? "dark"}
+              customColors={settings?.theme === "light" ? settings?.customColorsLight : settings?.customColorsDark}
               lines={lines}
               onLineDrag={handleLineDrag}
               onLineDragEnd={handleLineDrag}
               drawings={drawings}
               activeDrawingTool={activeDrawingTool}
               onDrawingCreated={handleDrawingCreated}
-              onDrawingSelectedChange={setSelectedDrawingId}
+              onDrawingSelectedChange={setSelectedDrawingIds}
+              onDeleteSelectedDrawings={handleDeleteSelectedDrawings}
+              selectMode={selectMode}
+              magnetEnabled={magnetEnabled}
               hasMoreHistory={hasMoreHistory}
               loadingOlderBars={loadingOlderBars}
               onRequestOlderBars={handleRequestOlderBars}
               positions={positions}
               currency={account?.currency}
+              symbolMeta={symbol}
               wsConnected={wsConnected}
               eaConnected={eaConnected}
             />
@@ -299,7 +386,13 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
       </div>
 
       <div className={tab === "dashboard" ? "" : "hidden"}>
-        <PositionsBar positions={positions} symbol={symbol} onClose={closePosition} />
+        <PositionsBar
+          positions={positions}
+          symbol={symbol}
+          onClose={closePosition}
+          onClosePartial={closePositionPartial}
+          onRiskFree={handleRiskFree}
+        />
       </div>
 
       {tab === "journal" && (

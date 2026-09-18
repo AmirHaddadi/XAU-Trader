@@ -2,17 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
-import type { Bar, Drawing, DrawingTool, PositionInfo } from "@xau-trader/protocol";
+import type { Bar, Drawing, DrawingTool, PositionInfo, SymbolMeta, ThemeColorTokens } from "@xau-trader/protocol";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleDot, faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
-import { PriceLineDragController, type DraggableLine } from "@/lib/priceLineDrag";
+import { PriceLineDragController, type DraggableLine, type HoverInfo } from "@/lib/priceLineDrag";
 import { DrawingLayerController } from "@/lib/drawingTools";
 import { PnlOverlayController } from "@/lib/pnlOverlay";
+import { ChartMagnifierController } from "@/lib/chartMagnifier";
 import { readChartPalette } from "@/lib/theme";
 import { useCandleCountdown } from "@/lib/useCandleCountdown";
 import { applyBarsSilently, revealBarsAnimated, revealOlderBarsAnimated } from "@/lib/chartReveal";
 import { useI18n } from "@/lib/i18n";
 import { ChartLoadingOverlay } from "./ChartLoadingOverlay";
+import { PriceLineTooltip } from "./PriceLineTooltip";
 
 // How close (in bar-index terms) the visible left edge has to get to the
 // start of the currently-loaded data before another history page is
@@ -44,18 +46,34 @@ interface LiveChartProps {
   timeframe: string | undefined;
   gridVisible: boolean;
   theme: string; // re-applies canvas colors on change — see lib/theme.ts
+  // The active theme's color overrides (Settings > Colors) — canvas colors
+  // are only ever re-read via getComputedStyle on a dependency change (they
+  // can't react to a CSS var changing on their own, same as `theme` above),
+  // so this needs to be a real prop the color-resolving effect depends on,
+  // not just something applied to the DOM elsewhere (see page.tsx's
+  // ThemeSync / lib/applyCustomColors.ts).
+  customColors: Partial<ThemeColorTokens> | undefined;
   lines: DraggableLine[];
   onLineDrag?: (id: string, price: number) => void;
   onLineDragEnd?: (id: string, price: number) => void;
   drawings: Drawing[];
   activeDrawingTool: DrawingTool | null;
   onDrawingCreated: (drawing: Drawing) => void;
-  onDrawingSelectedChange: (id: string | null) => void;
+  onDrawingSelectedChange: (ids: string[]) => void;
+  onDeleteSelectedDrawings: () => void;
+  // Explicit "Selector" tool — box/marquee multi-select over the chart
+  // (separate from the plain single-click select that's always available).
+  selectMode: boolean;
+  // Snaps new drawing anchors + dragged SL/TP/Entry lines to the nearest
+  // candle wick/OHLC value — see lib/magnet.ts.
+  magnetEnabled: boolean;
   hasMoreHistory: boolean;
   loadingOlderBars: boolean;
   onRequestOlderBars: () => void;
   positions: PositionInfo[];
   currency: string | undefined;
+  // Tick-value fields for the TP/SL hover P&L tooltip (lib/estimatePnl.ts).
+  symbolMeta: SymbolMeta | undefined;
   // Drives ChartLoadingOverlay's connected-vs-waiting copy — see there.
   wsConnected: boolean;
   eaConnected: boolean;
@@ -78,6 +96,7 @@ export function LiveChart({
   timeframe,
   gridVisible,
   theme,
+  customColors,
   lines,
   onLineDrag,
   onLineDragEnd,
@@ -85,11 +104,15 @@ export function LiveChart({
   activeDrawingTool,
   onDrawingCreated,
   onDrawingSelectedChange,
+  onDeleteSelectedDrawings,
+  selectMode,
+  magnetEnabled,
   hasMoreHistory,
   loadingOlderBars,
   onRequestOlderBars,
   positions,
   currency,
+  symbolMeta,
   wsConnected,
   eaConnected,
 }: LiveChartProps) {
@@ -100,8 +123,10 @@ export function LiveChart({
   const dragRef = useRef<PriceLineDragController | null>(null);
   const drawRef = useRef<DrawingLayerController | null>(null);
   const pnlRef = useRef<PnlOverlayController | null>(null);
-  const callbacksRef = useRef({ onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onRequestOlderBars });
-  callbacksRef.current = { onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onRequestOlderBars };
+  const magnifierRef = useRef<ChartMagnifierController | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
+  const callbacksRef = useRef({ onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onDeleteSelectedDrawings, onRequestOlderBars });
+  callbacksRef.current = { onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onDeleteSelectedDrawings, onRequestOlderBars };
   // Read inside the pan-subscription's handler without re-subscribing on
   // every render — subscribeVisibleLogicalRangeChange is wired once at
   // mount (see below).
@@ -137,29 +162,38 @@ export function LiveChart({
       upColor: palette.buy,
       downColor: palette.sell,
       borderVisible: false,
-      wickUpColor: palette.buy,
-      wickDownColor: palette.sell,
+      wickUpColor: palette.wickUp,
+      wickDownColor: palette.wickDown,
+      // The library's own default "last price" dashed line is redundant
+      // (and ambiguous — a single line, neither clearly bid nor ask) now
+      // that explicit live Bid/Ask lines are fed in via `lines` (see
+      // page.tsx) — avoid double-rendering a current-price indicator.
+      priceLineVisible: false,
     });
 
-    const drag = new PriceLineDragController(series, container);
+    const drag = new PriceLineDragController(chart, series, container);
     drag.setCallbacks(
       (id, price) => callbacksRef.current.onLineDrag?.(id, price),
       (id, price) => callbacksRef.current.onLineDragEnd?.(id, price),
     );
+    drag.setHoverCallback(setHoverInfo);
 
     const draw = new DrawingLayerController(chart, series, container);
     draw.setCallbacks(
       (d) => callbacksRef.current.onDrawingCreated(d),
-      (id) => callbacksRef.current.onDrawingSelectedChange(id),
+      (ids) => callbacksRef.current.onDrawingSelectedChange(ids),
+      () => callbacksRef.current.onDeleteSelectedDrawings(),
     );
 
     const pnl = new PnlOverlayController(chart, series, container);
+    const magnifier = new ChartMagnifierController(container);
 
     chartRef.current = chart;
     seriesRef.current = series;
     dragRef.current = drag;
     drawRef.current = draw;
     pnlRef.current = pnl;
+    magnifierRef.current = magnifier;
 
     // The chart stays mounted-but-hidden (display:none) on other tabs so
     // live ticks are never missed (see page.tsx) — but a background reload
@@ -204,20 +238,26 @@ export function LiveChart({
       drag.destroy();
       draw.destroy();
       pnl.destroy();
+      magnifier.destroy();
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
       dragRef.current = null;
       drawRef.current = null;
       pnlRef.current = null;
+      magnifierRef.current = null;
     };
     // Intentionally mount-only: theme/gridVisible are re-applied by the
     // effects below via applyOptions() rather than recreating the chart.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-resolve real color values on theme switch — canvas can't read
-  // "var(--color-x)" itself, see lib/theme.ts.
+  // Re-resolve real color values on theme switch OR a custom-color edit —
+  // canvas can't read "var(--color-x)" itself, see lib/theme.ts. Depending
+  // on `customColors` (not just `theme`) is what actually fixes "changing
+  // a color in Settings doesn't touch the candles" — the DOM's CSS var
+  // changes immediately (ThemeSync/applyCustomColors), but nothing here
+  // re-read it unless the theme *string* itself also changed.
   useEffect(() => {
     if (!chartRef.current || !seriesRef.current) return;
     const palette = readChartPalette();
@@ -228,13 +268,13 @@ export function LiveChart({
     seriesRef.current.applyOptions({
       upColor: palette.buy,
       downColor: palette.sell,
-      wickUpColor: palette.buy,
-      wickDownColor: palette.sell,
+      wickUpColor: palette.wickUp,
+      wickDownColor: palette.wickDown,
     });
-    // theme is a dependency purely to trigger this re-read; the values
-    // themselves come from the DOM, not from the prop.
+    // theme/customColors are dependencies purely to trigger this re-read;
+    // the actual values come from the DOM, not from either prop directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [theme]);
+  }, [theme, customColors]);
 
   useEffect(() => {
     chartRef.current?.applyOptions({ grid: { vertLines: { visible: gridVisible }, horzLines: { visible: gridVisible } } });
@@ -279,6 +319,15 @@ export function LiveChart({
       low: liveBar.low,
       close: liveBar.close,
     });
+    // A live tick can push a new high/low that rescales the price axis
+    // without ever firing a *time*-range change (the only thing
+    // DrawingLayerController/PnlOverlayController normally re-render on) —
+    // left drawings/PnL labels visually stuck at their old y-position until
+    // the user happened to pan/zoom (reported bug: "باید حتما اسکرول بشه که
+    // در جای صحیح رندر بشه"). Refreshing on every live bar keeps them
+    // synced at the same cadence the candle itself updates.
+    drawRef.current?.refresh();
+    pnlRef.current?.refresh();
   }, [liveBar]);
 
   useEffect(() => {
@@ -291,11 +340,33 @@ export function LiveChart({
 
   useEffect(() => {
     drawRef.current?.setActiveTool(activeDrawingTool);
+    magnifierRef.current?.setActive(activeDrawingTool !== null);
   }, [activeDrawingTool]);
+
+  useEffect(() => {
+    drawRef.current?.setSelectMode(selectMode);
+  }, [selectMode]);
 
   useEffect(() => {
     pnlRef.current?.setPositions(positions, currency);
   }, [positions, currency]);
+
+  // Bars feed both the magnet snap (nearest wick/OHLC lookup) and, for
+  // drawings, the coordinate-extrapolation fallback that fixes the
+  // "can't draw past the last candle" bug — see drawingTools.ts.
+  useEffect(() => {
+    drawRef.current?.setBars(bars);
+    dragRef.current?.setBars(bars);
+  }, [bars]);
+
+  useEffect(() => {
+    drawRef.current?.setMagnetEnabled(magnetEnabled);
+    dragRef.current?.setMagnetEnabled(magnetEnabled);
+  }, [magnetEnabled]);
+
+  useEffect(() => {
+    drawRef.current?.setTimeframe(timeframe ?? "M1");
+  }, [timeframe]);
 
   return (
     <div ref={containerRef} className="relative h-full w-full">
@@ -326,6 +397,7 @@ export function LiveChart({
           {timeframe} · {countdown.label}
         </div>
       )}
+      <PriceLineTooltip hover={hoverInfo} positions={positions} symbol={symbolMeta} currency={currency} />
     </div>
   );
 }

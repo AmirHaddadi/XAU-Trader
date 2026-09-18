@@ -150,6 +150,34 @@ public:
       return ok;
      }
 
+   //--- Closes part of an open position (web "50%" action). `volume` is
+   //--- clamped to the symbol's step/min grid and to the position's own
+   //--- remaining volume — never trusts the caller's raw number, same
+   //--- rounding CRiskEngine::Evaluate already applies to a new order's lots.
+   bool ClosePositionPartial(const ulong ticket, const double volume, const SSymbolSnapshot &sym, string &outMessage)
+     {
+      if(m_busy) { outMessage = "busy"; return false; }
+      if(!PositionSelectByTicket(ticket)) { outMessage = "not_found"; return false; }
+
+      double posVolume = PositionGetDouble(POSITION_VOLUME);
+      double v = CXautUtils::FloorVolumeToStep(volume, sym.volumeStep, sym.volumeMin);
+      if(v < sym.volumeMin)
+         v = sym.volumeMin;
+      if(v > posVolume)
+         v = CXautUtils::NormalizeVolume(posVolume, sym.volumeStep);
+      if(v <= 0.0 || v < sym.volumeMin - 1e-9)
+        {
+         outMessage = "volume_too_small";
+         return false;
+        }
+
+      m_busy = true;
+      bool ok = m_trade.PositionClosePartial(ticket, v);
+      outMessage = ok ? "" : (IntegerToString(m_trade.ResultRetcode()) + " " + m_trade.ResultRetcodeDescription());
+      m_busy = false;
+      return ok;
+     }
+
    bool CancelPending(const ulong ticket, string &outMessage)
      {
       if(m_busy) { outMessage = "busy"; return false; }

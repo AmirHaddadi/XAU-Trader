@@ -19,6 +19,10 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 const AUTO_DISMISS_MS = 4000;
+// Must match globals.css's .animate-toast-out-up duration — the item stays
+// in `items` (rendered with the exit class) for exactly this long so the
+// fade-out actually gets to play before it's removed from the DOM.
+const EXIT_DURATION_MS = 220;
 
 const BORDER_COLOR: Record<ToastKind, string> = {
   success: "var(--color-buy)",
@@ -38,10 +42,27 @@ const KIND_ICON: Record<ToastKind, IconDefinition> = {
 // screen inventing its own inline success/error banner.
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
+  // Two-phase removal: mark as leaving (swaps to the fade-out animation
+  // class) first, then actually drop it from `items` once that animation
+  // has had time to finish — a plain filter-on-dismiss made toasts vanish
+  // instantly with no exit motion at all.
+  const [leavingIds, setLeavingIds] = useState<Set<number>>(new Set());
   const idRef = useRef(0);
 
   const dismiss = useCallback((id: number) => {
-    setItems((prev) => prev.filter((t) => t.id !== id));
+    setLeavingIds((prev) => {
+      if (prev.has(id)) return prev; // already leaving — don't restart/duplicate the timer
+      return new Set(prev).add(id);
+    });
+    setTimeout(() => {
+      setItems((prev) => prev.filter((t) => t.id !== id));
+      setLeavingIds((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, EXIT_DURATION_MS);
   }, []);
 
   const show = useCallback(
@@ -56,16 +77,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ show }}>
       {children}
-      <div className="pointer-events-none fixed bottom-4 right-4 z-50 flex w-full max-w-sm flex-col gap-2">
+      {/* top-24 (not top-4): TopBar sits at the literal top of the page in
+          normal flow, not fixed, so a naive top-4 would render underneath/
+          overlapping its title row and connection badges — this clears it
+          on every tab, including the taller dashboard stats row. */}
+      <div className="pointer-events-none fixed top-24 right-4 z-50 flex w-full max-w-md flex-col gap-3">
         {items.map((t) => (
           <div
             key={t.id}
             role="status"
             onClick={() => dismiss(t.id)}
-            className="animate-fade-in-up pointer-events-auto flex cursor-pointer items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm text-text-primary shadow-lg backdrop-blur-sm"
+            className={`pointer-events-auto flex cursor-pointer items-start gap-3 rounded-xl border-2 bg-card px-4 py-3.5 text-[15px] font-medium text-text-primary shadow-2xl backdrop-blur-sm ${
+              leavingIds.has(t.id) ? "animate-toast-out-up" : "animate-toast-in-down"
+            }`}
             style={{ borderColor: BORDER_COLOR[t.kind] }}
           >
-            <FontAwesomeIcon icon={KIND_ICON[t.kind]} className="h-3.5 w-3.5 shrink-0" style={{ color: BORDER_COLOR[t.kind] }} />
+            <FontAwesomeIcon icon={KIND_ICON[t.kind]} className="mt-0.5 h-5 w-5 shrink-0" style={{ color: BORDER_COLOR[t.kind] }} />
             {t.message}
           </div>
         ))}

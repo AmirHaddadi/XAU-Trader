@@ -115,6 +115,8 @@ export type BridgeOrderModifyPosition = EaEnvelope<
 
 export type BridgeOrderClose = EaEnvelope<"order.close", { ticket: number }>;
 
+export type BridgeOrderClosePartial = EaEnvelope<"order.closePartial", { ticket: number; volume: number }>;
+
 export type BridgeOrderCancel = EaEnvelope<"order.cancel", { ticket: number }>;
 
 export type BridgeHistoryRequest = EaEnvelope<"history.request", { sinceTicket?: number }>;
@@ -126,5 +128,6 @@ export type BridgeToEaMessage =
   | BridgeOrderModifyPending
   | BridgeOrderModifyPosition
   | BridgeOrderClose
+  | BridgeOrderClosePartial
   | BridgeOrderCancel
   | BridgeHistoryRequest;

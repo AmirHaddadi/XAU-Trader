@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Amirreza Haddadi"
 #property link      "https://github.com/AmirHaddadi/XAU-Trader"
-#property version   "1.1"
+#property version   "1.2"
 #property description "Position sizing & money-management engine for XAUUSD. Drives the local XAU-Trader web platform (bridge + browser dashboard) by default; the legacy on-chart panel can be re-enabled via XAUT_LEGACY_PANEL below for rollback."
 #property strict
 
@@ -37,7 +37,7 @@
 #include <XAUTrader/Config/SettingsStore.mqh>
 #endif
 
-#define XAUT_EA_VERSION "1.1.0" // kept in sync with #property version above; reported in the bridge "hello" handshake
+#define XAUT_EA_VERSION "1.2.0" // kept in sync with #property version above; reported in the bridge "hello" handshake
 
 input ulong   InpMagicNumber       = 574839201;  // Magic number for orders placed by this panel
 input int     InpDeviationPoints   = 20;         // Max price deviation (points) for market orders

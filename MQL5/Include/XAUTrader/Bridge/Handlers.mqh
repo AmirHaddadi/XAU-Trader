@@ -99,6 +99,8 @@ public:
         }
       if(msgType == "order.close")
          return HandleOrderClose(client, orderMgr, reqId, line);
+      if(msgType == "order.closePartial")
+         return HandleOrderClosePartial(client, orderMgr, symbol, reqId, line);
       if(msgType == "order.cancel")
          return HandleOrderCancel(client, orderMgr, reqId, line);
       if(msgType == "history.request")
@@ -264,6 +266,17 @@ private:
       ulong ticket = CProtocol::ReadTicket(line);
       string msg;
       bool ok = orderMgr.ClosePosition(ticket, msg);
+      client.SendLine(CProtocol::BuildOrderAck(reqId, ok, msg));
+      return ok;
+     }
+
+   bool HandleOrderClosePartial(CSocketClient &client, COrderManager &orderMgr, const string symbol, const string reqId, const string line)
+     {
+      ulong ticket = CProtocol::ReadTicket(line);
+      double volume = CProtocol::ReadVolume(line);
+      SSymbolSnapshot sym = CSymbolInfoCache::Read(symbol);
+      string msg;
+      bool ok = orderMgr.ClosePositionPartial(ticket, volume, sym, msg);
       client.SendLine(CProtocol::BuildOrderAck(reqId, ok, msg));
       return ok;
      }

@@ -37,6 +37,10 @@ ws.on("open", () => {
     ws.send(JSON.stringify({ type: "order.send", reqId: "test-3", payload: { plan: testPlan } }));
   }, 1100);
   setTimeout(() => {
+    console.log("[fake-browser] -> order.closePartial (new — 50% close smoke test)");
+    ws.send(JSON.stringify({ type: "order.closePartial", reqId: "test-3b", payload: { ticket: 900001, volume: 0.05 } }));
+  }, 1250);
+  setTimeout(() => {
     console.log("[fake-browser] -> settings.request");
     ws.send(JSON.stringify({ type: "settings.request", reqId: "test-4", payload: {} }));
   }, 1400);

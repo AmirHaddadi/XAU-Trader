@@ -19,6 +19,10 @@ export interface ChartPalette {
   sell: string;
   accent: string;
   grid: string;
+  // Candlestick wick/shadow color — independent from buy/sell (which drive
+  // the candle body plus buttons/PnL text/etc project-wide).
+  wickUp: string;
+  wickDown: string;
 }
 
 export function readChartPalette(): ChartPalette {
@@ -30,5 +34,7 @@ export function readChartPalette(): ChartPalette {
     sell: resolveCssVar("--color-sell"),
     accent: resolveCssVar("--color-accent"),
     grid: resolveCssVar("--color-chart-grid"),
+    wickUp: resolveCssVar("--color-candle-wick-up"),
+    wickDown: resolveCssVar("--color-candle-wick-down"),
   };
 }

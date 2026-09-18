@@ -1,4 +1,7 @@
-import { LineStyle, type Coordinate, type IPriceLine, type ISeriesApi, type LineWidth } from "lightweight-charts";
+import { LineStyle, type Coordinate, type IChartApi, type IPriceLine, type ISeriesApi, type LineWidth } from "lightweight-charts";
+import type { Bar } from "@xau-trader/protocol";
+import { hexToRgb, mixWithWhite, rgbToHex } from "./color";
+import { snapPrice } from "./magnet";
 
 export interface DraggableLine {
   id: string;
@@ -9,24 +12,18 @@ export interface DraggableLine {
   dashed?: boolean;
 }
 
+export interface HoverInfo {
+  id: string;
+  price: number;
+  clientX: number;
+  clientY: number;
+}
+
 const HIT_TOLERANCE_PX = 8;
 const HOVER_TRANSITION_MS = 150;
 const HOVER_LIGHTEN = 0.35; // 0..1, how much closer to white the hover/drag color moves
 const DRAG_LIGHTEN = 0.55;
-
-function hexToRgb(hex: string): [number, number, number] | null {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return null;
-  const n = Number.parseInt(m[1], 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-function mixWithWhite(hex: string, amount: number): string {
-  const rgb = hexToRgb(hex);
-  if (!rgb) return hex; // not a plain #rrggbb (e.g. already a CSS var/named color) — leave as-is rather than guess
-  const [r, g, b] = rgb.map((c) => Math.round(c + (255 - c) * amount));
-  return `#${[r, g, b].map((c) => c.toString(16).padStart(2, "0")).join("")}`;
-}
+const MAGNET_TOLERANCE_PX = 10;
 
 interface LineEntry {
   opts: DraggableLine;
@@ -43,15 +40,20 @@ interface LineEntry {
 // hover feedback (cursor + a brightened color/thickness transition) since
 // none of that comes for free on a canvas-drawn line either.
 export class PriceLineDragController {
+  private chart: IChartApi;
   private series: ISeriesApi<"Candlestick">;
   private container: HTMLElement;
   private lines = new Map<string, LineEntry>();
   private draggingId: string | null = null;
   private hoveredId: string | null = null;
+  private bars: Bar[] = [];
+  private magnetEnabled = false;
   private onDrag: (id: string, price: number) => void = () => {};
   private onDragEnd: (id: string, price: number) => void = () => {};
+  private onHover: (info: HoverInfo | null) => void = () => {};
 
-  constructor(series: ISeriesApi<"Candlestick">, container: HTMLElement) {
+  constructor(chart: IChartApi, series: ISeriesApi<"Candlestick">, container: HTMLElement) {
+    this.chart = chart;
     this.series = series;
     this.container = container;
     // Capture phase, not bubble: lightweight-charts attaches its own
@@ -77,6 +79,24 @@ export class PriceLineDragController {
   setCallbacks(onDrag: (id: string, price: number) => void, onDragEnd: (id: string, price: number) => void): void {
     this.onDrag = onDrag;
     this.onDragEnd = onDragEnd;
+  }
+
+  // Piggybacks on the existing hover tracking (handleHoverMove/Leave) rather
+  // than adding new listeners — used by PriceLineTooltip to show a
+  // potential-P&L readout while hovering a position's SL/TP line.
+  setHoverCallback(cb: (info: HoverInfo | null) => void): void {
+    this.onHover = cb;
+  }
+
+  // Used by the magnet feature (see lib/magnet.ts) to snap a dragged
+  // price to the nearest candle wick/open/close — kept in sync with
+  // LiveChart's `bars` prop, same as DrawingLayerController.
+  setBars(bars: Bar[]): void {
+    this.bars = bars;
+  }
+
+  setMagnetEnabled(enabled: boolean): void {
+    this.magnetEnabled = enabled;
   }
 
   // Reconciles the visible price lines against `lines`, keyed by id. A line
@@ -178,11 +198,12 @@ export class PriceLineDragController {
       if (cancelled) return;
       const t = Math.min(1, (now - start) / HOVER_TRANSITION_MS);
       const eased = 1 - Math.pow(1 - t, 2); // easeOutQuad — quick and deliberate, not sluggish
-      const r = fromRgb[0] + (toRgb[0] - fromRgb[0]) * eased;
-      const g = fromRgb[1] + (toRgb[1] - fromRgb[1]) * eased;
-      const b = fromRgb[2] + (toRgb[2] - fromRgb[2]) * eased;
       entry.handle.applyOptions({
-        color: `#${[r, g, b].map((c) => Math.round(c).toString(16).padStart(2, "0")).join("")}`,
+        color: rgbToHex({
+          r: fromRgb.r + (toRgb.r - fromRgb.r) * eased,
+          g: fromRgb.g + (toRgb.g - fromRgb.g) * eased,
+          b: fromRgb.b + (toRgb.b - fromRgb.b) * eased,
+        }),
       });
       if (t < 1) requestAnimationFrame(step);
       else entry.cancelColorAnim = null;
@@ -200,7 +221,14 @@ export class PriceLineDragController {
       this.container.style.cursor = "ns-resize";
       this.setDepth(bestId, "drag");
       e.preventDefault();
-      e.stopPropagation(); // block the chart's own pan handler from also reacting to this pointerdown
+      // stopImmediatePropagation (not just stopPropagation): also blocks
+      // DrawingLayerController's own capture-phase pointerdown listener on
+      // this same container element — same-node listeners otherwise all
+      // still fire regardless of a plain stopPropagation(). Without this,
+      // starting a drag exactly on an SL/TP line while the Selector tool
+      // is active would simultaneously kick off a marquee-select on the
+      // same gesture.
+      e.stopImmediatePropagation();
     }
   };
 
@@ -211,8 +239,19 @@ export class PriceLineDragController {
 
     const rect = this.container.getBoundingClientRect();
     const y = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
-    const price = this.series.coordinateToPrice(y as Coordinate);
+    let price: number | null = this.series.coordinateToPrice(y as Coordinate);
     if (price == null) return;
+
+    if (this.magnetEnabled) {
+      const x = e.clientX - rect.left;
+      const time = this.chart.timeScale().coordinateToTime(x);
+      // Beyond the loaded/visible range coordinateToTime can return null
+      // (see lib/drawingTools.ts's toPoint for the same case with a real
+      // fallback) — here it's fine to just skip the snap for this frame
+      // rather than extrapolate, since a price-line drag always tracks a
+      // real, already-visible position/plan line.
+      if (time != null) price = snapPrice(price, time as unknown as number, this.bars, MAGNET_TOLERANCE_PX, (p) => this.series.priceToCoordinate(p));
+    }
 
     entry.handle.applyOptions({ price });
     entry.opts = { ...entry.opts, price };
@@ -234,12 +273,14 @@ export class PriceLineDragController {
   private handleHoverMove = (e: PointerEvent): void => {
     if (this.draggingId) return; // mid-drag owns cursor/depth already
     const hitId = this.hitTest(e.clientY);
-    if (hitId === this.hoveredId) return;
-
-    if (this.hoveredId) this.setDepth(this.hoveredId, "none");
-    this.hoveredId = hitId;
-    if (hitId) this.setDepth(hitId, "hover");
-    this.container.style.cursor = hitId ? "ns-resize" : "";
+    if (hitId !== this.hoveredId) {
+      if (this.hoveredId) this.setDepth(this.hoveredId, "none");
+      this.hoveredId = hitId;
+      if (hitId) this.setDepth(hitId, "hover");
+      this.container.style.cursor = hitId ? "ns-resize" : "";
+    }
+    const entry = hitId ? this.lines.get(hitId) : undefined;
+    this.onHover(entry ? { id: hitId as string, price: entry.opts.price, clientX: e.clientX, clientY: e.clientY } : null);
   };
 
   private handleHoverLeave = (): void => {
@@ -247,5 +288,6 @@ export class PriceLineDragController {
     if (this.hoveredId) this.setDepth(this.hoveredId, "none");
     this.hoveredId = null;
     this.container.style.cursor = "";
+    this.onHover(null);
   };
 }

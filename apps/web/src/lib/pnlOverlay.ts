@@ -50,6 +50,14 @@ export class PnlOverlayController {
     this.layer.remove();
   }
 
+  // Same reasoning as DrawingLayerController.refresh(): a live price tick
+  // can rescale the price axis without firing a time-range change, which
+  // would otherwise leave this label's y-position stale until the next
+  // positions push or a pan/zoom. Call on every liveBar update.
+  refresh(): void {
+    this.render();
+  }
+
   private render = (): void => {
     this.layer.replaceChildren();
     if (this.chart.paneSize().width === 0) return; // hidden tab — see LiveChart's ResizeObserver catch-up

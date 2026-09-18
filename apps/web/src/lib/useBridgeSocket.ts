@@ -388,6 +388,16 @@ export function useBridgeSocket() {
     [request],
   );
 
+  const closePositionPartial = useCallback(
+    async (ticket: number, volume: number): Promise<OrderAck> => {
+      const res = await request({ type: "order.closePartial", payload: { ticket, volume } });
+      if (res.type === "error") throw new Error(res.payload.message);
+      if (res.type !== "order.ack") throw new Error(`unexpected response: ${res.type}`);
+      return res.payload;
+    },
+    [request],
+  );
+
   const cancelPending = useCallback(
     async (ticket: number): Promise<OrderAck> => {
       const res = await request({ type: "order.cancel", payload: { ticket } });
@@ -489,6 +499,7 @@ export function useBridgeSocket() {
     modifyPendingOrder,
     modifyPosition,
     closePosition,
+    closePositionPartial,
     cancelPending,
     updateSettings,
     requestJournal,

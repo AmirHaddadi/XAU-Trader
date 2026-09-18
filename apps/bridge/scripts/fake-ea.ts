@@ -93,7 +93,7 @@ socket.on("data", (chunk) => {
         send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "", ticket: 900001 } });
       }
     }
-    if (msg.type === "order.modifyPending" || msg.type === "order.close" || msg.type === "order.cancel") {
+    if (msg.type === "order.modifyPending" || msg.type === "order.close" || msg.type === "order.cancel" || msg.type === "order.closePartial") {
       send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "" } });
     }
     if (msg.type === "order.modifyPosition") {
