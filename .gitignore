@@ -35,3 +35,8 @@ apps/bridge/data/
 # .tmp/ is scratch (bundle intermediates, downloaded Node archives cache)
 build/package-windows/out/
 build/package-windows/.tmp/
+
+# A loose copy of the built installer sometimes dropped at the repo root
+# for Amir to grab and hand to the client — distribution is the GitHub
+# Release asset, this is never meant to enter git history.
+/XAUTrader-Setup-*.exe
