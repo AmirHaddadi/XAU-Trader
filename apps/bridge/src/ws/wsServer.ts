@@ -54,6 +54,15 @@ export function startWsServer(httpServer: HttpServer): void {
 
   // Relay every live EA push straight through to all connected browser tabs.
   eaLink.on("connected", () => broadcast(clients, { type: "ea.status", payload: { connected: true } }));
+  // A fresh EA connection (terminal restart, template reload, bridge
+  // restart...) always comes up on its chart's own native symbol (see
+  // XAU_Trader.mq5's g_activeSymbol init) — re-apply whatever the user last
+  // explicitly selected so a mid-weekend-test BTCUSD/ETHUSD selection
+  // survives a reconnect instead of silently snapping back to XAUUSD.
+  eaLink.on("connected", () => {
+    const { activeSymbol } = getSettings();
+    if (activeSymbol) eaLink.send({ type: "symbol.select", payload: { symbol: activeSymbol } });
+  });
   eaLink.on("disconnected", () => broadcast(clients, { type: "ea.status", payload: { connected: false } }));
   eaLink.on("tick", (msg) => broadcast(clients, msg));
   eaLink.on("positions", (msg) => broadcast(clients, msg));
@@ -88,6 +97,16 @@ export function startWsServer(httpServer: HttpServer): void {
         } catch (err) {
           send(ws, { type: "error", reqId: msg.reqId, payload: { message: (err as Error).message } });
         }
+        return;
+      }
+      case "symbol.select": {
+        // Persist first (so a reconnect resync above sees it too), then
+        // broadcast the new settings — including to the tab that made the
+        // change, same pattern as settings.update — and forward to the EA.
+        // No ack: the next symbol/tick/positions push confirms it.
+        const settings = updateSettings({ activeSymbol: msg.payload.symbol });
+        broadcast(clients, { type: "settings.data", payload: settings });
+        eaLink.send({ type: "symbol.select", payload: msg.payload });
         return;
       }
       case "risk.preview": {

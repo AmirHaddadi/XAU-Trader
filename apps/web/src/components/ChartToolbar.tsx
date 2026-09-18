@@ -4,6 +4,7 @@ import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import {
   faArrowPointer,
   faClockRotateLeft,
+  faCrosshairs,
   faFillDrip,
   faGripLines,
   faGripLinesVertical,
@@ -24,6 +25,8 @@ interface ChartToolbarProps {
   onGridToggle: () => void;
   magnetEnabled: boolean;
   onMagnetToggle: () => void;
+  crosshairEnabled: boolean;
+  onCrosshairToggle: () => void;
   activeTool: DrawingTool | null;
   onToolChange: (tool: DrawingTool | null) => void;
   // Explicit multi-select ("Selector") mode — box/marquee-select over the
@@ -59,6 +62,8 @@ export function ChartToolbar({
   onGridToggle,
   magnetEnabled,
   onMagnetToggle,
+  crosshairEnabled,
+  onCrosshairToggle,
   activeTool,
   onToolChange,
   selectMode,
@@ -155,6 +160,20 @@ export function ChartToolbar({
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onCrosshairToggle}
+          aria-pressed={crosshairEnabled}
+          title={t("crosshairHint")}
+          className="flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium transition-colors duration-150"
+          style={{
+            color: crosshairEnabled ? "var(--color-accent)" : "var(--color-text-muted)",
+            backgroundColor: crosshairEnabled ? "var(--color-card-alt)" : "transparent",
+          }}
+        >
+          <FontAwesomeIcon icon={faCrosshairs} className="h-3 w-3" />
+          {t("crosshair")}
+        </button>
         <button
           type="button"
           onClick={onMagnetToggle}

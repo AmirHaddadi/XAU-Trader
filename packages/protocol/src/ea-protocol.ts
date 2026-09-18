@@ -99,6 +99,13 @@ export type BridgeBarsRequest = EaEnvelope<
   { symbol: string; timeframe: string; count: number; offset?: number }
 >;
 
+// Switches the EA's single "active" trading symbol (see SYMBOL_WATCHLIST in
+// domain.ts) — everything trading-related (risk preview, order send/modify/
+// close, position scan, journal scan, tick/symbol pushes) follows this from
+// then on, independent of whatever symbol the chart itself is attached to.
+// Fire-and-forget, no ack — see BrowserSymbolSelect in browser-protocol.ts.
+export type BridgeSymbolSelect = EaEnvelope<"symbol.select", { symbol: string }>;
+
 export type BridgeRiskPreview = EaEnvelope<"risk.preview", { plan: TradePlan }>;
 
 export type BridgeOrderSend = EaEnvelope<"order.send", { plan: TradePlan }>;
@@ -123,6 +130,7 @@ export type BridgeHistoryRequest = EaEnvelope<"history.request", { sinceTicket?:
 
 export type BridgeToEaMessage =
   | BridgeBarsRequest
+  | BridgeSymbolSelect
   | BridgeRiskPreview
   | BridgeOrderSend
   | BridgeOrderModifyPending

@@ -49,6 +49,14 @@ public:
         }
 
       m_busy = true;
+      // Re-detected per order rather than trusting Init()'s one-time
+      // SetTypeFillingBySymbol(_Symbol) — that was always the chart's own
+      // symbol, which is wrong the moment an order targets a different
+      // active symbol (see XAU_Trader.mq5's g_activeSymbol). Filling policy
+      // genuinely differs by instrument/broker (crypto CFDs often require a
+      // different one than XAUUSD), so this must be looked up per sym, not
+      // assumed constant for the EA's lifetime.
+      m_trade.SetTypeFillingBySymbol(sym.symbol);
       bool ok = false;
       const bool isBuy = (plan.direction == TRADE_DIR_BUY);
       double entry = (plan.placement == PLACEMENT_MARKET) ? (isBuy ? sym.ask : sym.bid) : plan.entryPrice;

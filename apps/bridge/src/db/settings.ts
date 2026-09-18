@@ -19,6 +19,8 @@ const DEFAULTS: Settings = {
   customColorsLight: {},
   riskFreePips: 5,
   riskFreeConsiderSpread: true,
+  crosshairEnabled: true,
+  activeSymbol: "",
 };
 
 export function getSettings(): Settings {

@@ -64,6 +64,19 @@ export interface Settings {
   // value (SL exactly at entry).
   riskFreePips: number;
   riskFreeConsiderSpread: boolean;
+  // Whether the chart's built-in dashed crosshair guide lines render at
+  // all (see LiveChart.tsx's CrosshairMode.Hidden branch) — the toolbar
+  // toggle next to Magnet. Defaults true so existing behavior (the
+  // library's own out-of-the-box crosshair) is unchanged until a user
+  // explicitly turns it off.
+  crosshairEnabled: boolean;
+  // Last symbol.select the user made (see SYMBOL_WATCHLIST in domain.ts).
+  // "" means no explicit selection yet — the EA starts on whatever symbol
+  // its chart is attached to (XAUUSD in practice). Persisted purely so a
+  // bridge/EA restart re-applies the same selection instead of silently
+  // snapping back to XAUUSD mid-weekend-test (see wsServer.ts's eaLink
+  // "connected" handler).
+  activeSymbol: string;
 }
 
 export type WsSettings = WsEnvelope<"settings.data", Settings>;
@@ -121,6 +134,12 @@ export type BridgeToBrowserMessage =
 // ---- Browser -> Bridge (requests, correlated by reqId where meaningful) --
 
 export type BrowserBarsRequest = WsEnvelope<"bars.request", { symbol: string; timeframe: string; count: number; offset?: number }>;
+// Fire-and-forget — switches the EA's single "active" trading symbol (see
+// SYMBOL_WATCHLIST). The bridge both persists it (Settings.activeSymbol)
+// and forwards it to the EA; there's no direct ack, the confirmation is
+// the next `symbol`/`tick`/`positions` push actually reflecting the new
+// symbol (see wsServer.ts).
+export type BrowserSymbolSelect = WsEnvelope<"symbol.select", { symbol: string }>;
 export type BrowserRiskPreview = WsEnvelope<"risk.preview", { plan: TradePlan }>;
 export type BrowserOrderSend = WsEnvelope<"order.send", { plan: TradePlan }>;
 export type BrowserOrderModifyPending = WsEnvelope<"order.modifyPending", { ticket: number; price: number; sl: number; tp: number }>;
@@ -149,6 +168,7 @@ export type BrowserPing = WsEnvelope<"ping", Record<string, never>>;
 
 export type BrowserToBridgeMessage =
   | BrowserBarsRequest
+  | BrowserSymbolSelect
   | BrowserRiskPreview
   | BrowserOrderSend
   | BrowserOrderModifyPending

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CandlestickSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, createChart, CrosshairMode, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import type { Bar, Drawing, DrawingTool, PositionInfo, SymbolMeta, ThemeColorTokens } from "@xau-trader/protocol";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faCircleDot, faHourglassHalf } from "@fortawesome/free-solid-svg-icons";
@@ -67,6 +67,9 @@ interface LiveChartProps {
   // Snaps new drawing anchors + dragged SL/TP/Entry lines to the nearest
   // candle wick/OHLC value — see lib/magnet.ts.
   magnetEnabled: boolean;
+  // Toggles the library's own built-in crosshair (the dashed horizontal/
+  // vertical guide lines + axis labels that otherwise always render).
+  crosshairEnabled: boolean;
   hasMoreHistory: boolean;
   loadingOlderBars: boolean;
   onRequestOlderBars: () => void;
@@ -107,6 +110,7 @@ export function LiveChart({
   onDeleteSelectedDrawings,
   selectMode,
   magnetEnabled,
+  crosshairEnabled,
   hasMoreHistory,
   loadingOlderBars,
   onRequestOlderBars,
@@ -156,6 +160,9 @@ export function LiveChart({
         vertLines: { color: palette.grid, visible: gridVisible },
         horzLines: { color: palette.grid, visible: gridVisible },
       },
+      // Mount-only value, same as gridVisible right above — later toggles
+      // go through the dedicated applyOptions effect further down.
+      crosshair: { mode: crosshairEnabled ? CrosshairMode.Magnet : CrosshairMode.Hidden },
       timeScale: { timeVisible: true, secondsVisible: false, rightOffset: 12 },
     });
     const series = chart.addSeries(CandlestickSeries, {
@@ -279,6 +286,13 @@ export function LiveChart({
   useEffect(() => {
     chartRef.current?.applyOptions({ grid: { vertLines: { visible: gridVisible }, horzLines: { visible: gridVisible } } });
   }, [gridVisible]);
+
+  useEffect(() => {
+    // Magnet (PriceLineDragController/DrawingLayerController's snap-to-wick)
+    // is a completely separate mechanism from this — see magnetEnabled's own
+    // effect below — this only toggles the library's own visual crosshair.
+    chartRef.current?.applyOptions({ crosshair: { mode: crosshairEnabled ? CrosshairMode.Magnet : CrosshairMode.Hidden } });
+  }, [crosshairEnabled]);
 
   // Full reload only — timeframe switch or initial history. NOT called for
   // live ticks (see `liveBar` below), so panning/zoom survives streaming.

@@ -3,7 +3,6 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import {
   faBookOpen,
-  faChartLine,
   faCoins,
   faGaugeHigh,
   faGear,
@@ -14,6 +13,7 @@ import {
   faTriangleExclamation,
 } from "@fortawesome/free-solid-svg-icons";
 import { useI18n, type TranslationKey } from "@/lib/i18n";
+import { SYMBOL_WATCHLIST } from "@/lib/symbols";
 import { ConnectionBadge } from "./ConnectionBadge";
 
 type Tab = "dashboard" | "journal" | "settings";
@@ -34,6 +34,7 @@ interface TopBarProps {
   tick: Tick | undefined;
   theme: AppTheme;
   onThemeToggle: () => void;
+  onSymbolSelect: (symbol: string) => void;
 }
 
 function StatChip({ label, value, tone }: { label: string; value: string; tone?: "buy" | "sell" }) {
@@ -54,7 +55,19 @@ function StatChip({ label, value, tone }: { label: string; value: string; tone?:
 // AccountBar into one organized, badged status block — connection state,
 // account stats and market stats are visually grouped as distinct
 // categories rather than one flat row (Fix-Bugs.md item 6).
-export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, lastError, account, tick, theme, onThemeToggle }: TopBarProps) {
+export function TopBar({
+  tab,
+  onTabChange,
+  symbol,
+  wsConnected,
+  eaConnected,
+  lastError,
+  account,
+  tick,
+  theme,
+  onThemeToggle,
+  onSymbolSelect,
+}: TopBarProps) {
   const { t } = useI18n();
   const digits = symbol?.digits ?? 2;
   const fmtPrice = (v: number) => v.toFixed(digits);
@@ -66,7 +79,11 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
       <div className="flex flex-wrap items-center gap-4 px-4 pt-3">
         <div className="flex items-baseline gap-2">
           <h1 className="flex items-center gap-2 text-lg font-semibold text-accent">
-            <FontAwesomeIcon icon={faChartLine} className="h-4 w-4" />
+            {/* Plain <img>, not next/image — this is a small fixed local
+                asset with no responsive/srcset need, and avoids depending on
+                the server-side image optimizer (sharp) inside the packaged,
+                portable-Node build (see build/package-windows). */}
+            <img src="/logo.png" alt="" width={20} height={20} className="h-5 w-5 object-contain" />
             {t("appTitle")}
           </h1>
         </div>
@@ -130,18 +147,31 @@ export function TopBar({ tab, onTabChange, symbol, wsConnected, eaConnected, las
             <StatChip label={t("ask")} value={tick ? fmtPrice(tick.ask) : "—"} tone="buy" />
             <StatChip label={t("spread")} value={spread !== undefined ? `${spread} pts` : "—"} />
           </div>
-          <div className="ms-auto flex items-center px-3 py-1.5">
-            <span
-              className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold tracking-wide"
-              style={{
-                borderColor: "color-mix(in srgb, var(--color-accent) 45%, var(--color-border))",
-                backgroundColor: "color-mix(in srgb, var(--color-accent) 14%, var(--color-card-alt))",
-                color: "var(--color-accent)",
-              }}
-            >
-              <FontAwesomeIcon icon={faCoins} className="h-3 w-3" />
-              {symbol?.symbol ?? "—"}
-            </span>
+          <div className="ms-auto flex items-center gap-1 px-3 py-1.5" role="group" aria-label={t("symbolSwitchHint")} title={t("symbolSwitchHint")}>
+            <FontAwesomeIcon icon={faCoins} className="h-3 w-3 text-text-muted" aria-hidden />
+            {SYMBOL_WATCHLIST.map((s) => {
+              const active = symbol?.symbol === s || (!symbol && s === SYMBOL_WATCHLIST[0]);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onSymbolSelect(s)}
+                  aria-pressed={active}
+                  className="rounded-full border px-2.5 py-1 text-xs font-semibold tracking-wide transition-colors duration-150"
+                  style={
+                    active
+                      ? {
+                          borderColor: "color-mix(in srgb, var(--color-accent) 45%, var(--color-border))",
+                          backgroundColor: "color-mix(in srgb, var(--color-accent) 14%, var(--color-card-alt))",
+                          color: "var(--color-accent)",
+                        }
+                      : { borderColor: "transparent", color: "var(--color-text-muted)" }
+                  }
+                >
+                  {s}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

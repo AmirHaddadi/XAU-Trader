@@ -42,6 +42,11 @@ SetCompressor /SOLID lzma
 !define MUI_ABORTWARNING
 !define MUI_FINISHPAGE_RUN "$INSTDIR\xautrader-bridge.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Launch XAU Trader"
+; Same source icon as the web dashboard's favicon (apps/web/public/
+; favicon.ico) — installer .exe, uninstaller .exe, and the wizard's own
+; title-bar icon all pick this up automatically via MUI2.
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_INSTFILES
@@ -52,14 +57,19 @@ SetCompressor /SOLID lzma
 Section "Install"
   SetOutPath "$INSTDIR"
   File /r "${SRCDIR}\*.*"
+  ; Shortcuts/Add-Remove-Programs below reference this by its installed
+  ; path, not the .nsi-relative one used by MUI_ICON above — the wizard's
+  ; own icon is baked into the installer .exe at compile time, but a
+  ; shortcut's icon is read at runtime from whatever file it points to.
+  File "icon.ico"
 
   WriteRegStr HKCU "Software\XAUTrader" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\XAUTrader" "Version" "${VERSION}"
 
   CreateDirectory "$SMPROGRAMS\XAU Trader"
-  CreateShortcut "$SMPROGRAMS\XAU Trader\XAU Trader.lnk" "$INSTDIR\xautrader-bridge.exe"
-  CreateShortcut "$SMPROGRAMS\XAU Trader\Uninstall.lnk" "$INSTDIR\uninstall.exe"
-  CreateShortcut "$DESKTOP\XAU Trader.lnk" "$INSTDIR\xautrader-bridge.exe"
+  CreateShortcut "$SMPROGRAMS\XAU Trader\XAU Trader.lnk" "$INSTDIR\xautrader-bridge.exe" "" "$INSTDIR\icon.ico"
+  CreateShortcut "$SMPROGRAMS\XAU Trader\Uninstall.lnk" "$INSTDIR\uninstall.exe" "" "$INSTDIR\icon.ico"
+  CreateShortcut "$DESKTOP\XAU Trader.lnk" "$INSTDIR\xautrader-bridge.exe" "" "$INSTDIR\icon.ico"
 
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
@@ -68,6 +78,7 @@ Section "Install"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\XAUTrader" "DisplayVersion" "${VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\XAUTrader" "UninstallString" "$INSTDIR\uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\XAUTrader" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\XAUTrader" "DisplayIcon" "$INSTDIR\icon.ico"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\XAUTrader" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\XAUTrader" "NoRepair" 1
 

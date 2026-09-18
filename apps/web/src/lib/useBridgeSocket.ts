@@ -417,6 +417,17 @@ export function useBridgeSocket() {
     [send],
   );
 
+  // Fire-and-forget — switches the EA's active trading symbol (see
+  // SYMBOL_WATCHLIST). No ack; the bridge persists it and forwards it to the
+  // EA, and confirmation is the next symbol/tick/positions push actually
+  // reflecting the new symbol (settings.data also updates activeSymbol).
+  const selectSymbol = useCallback(
+    (symbol: string) => {
+      send({ type: "symbol.select", payload: { symbol } });
+    },
+    [send],
+  );
+
   const updateSettings = useCallback(
     (partial: Partial<Settings>) => {
       // Fire-and-forget — the bridge broadcasts the updated settings.data
@@ -501,6 +512,7 @@ export function useBridgeSocket() {
     closePosition,
     closePositionPartial,
     cancelPending,
+    selectSymbol,
     updateSettings,
     requestJournal,
     requestComments,

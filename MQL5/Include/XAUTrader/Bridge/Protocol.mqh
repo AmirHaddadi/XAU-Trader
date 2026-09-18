@@ -171,6 +171,7 @@ public:
    // ---- Bridge -> EA readers ---------------------------------------------
 
    static string ReadBarsRequestSymbol(const string json)   { return CJsonUtils::ExtractString(json, "symbol"); }
+   static string ReadSelectSymbol(const string json)        { return CJsonUtils::ExtractString(json, "symbol"); }
    static string ReadBarsRequestTimeframe(const string json){ return CJsonUtils::ExtractString(json, "timeframe"); }
    static int    ReadBarsRequestCount(const string json)    { return (int)CJsonUtils::ExtractInt(json, "count", 500); }
    static int    ReadBarsRequestOffset(const string json)   { return (int)CJsonUtils::ExtractInt(json, "offset", 0); }

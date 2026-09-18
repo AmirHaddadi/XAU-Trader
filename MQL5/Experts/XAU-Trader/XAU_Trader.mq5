@@ -8,6 +8,9 @@
 #property version   "1.2"
 #property description "Position sizing & money-management engine for XAUUSD. Drives the local XAU-Trader web platform (bridge + browser dashboard) by default; the legacy on-chart panel can be re-enabled via XAUT_LEGACY_PANEL below for rollback."
 #property strict
+// Same source icon as the web dashboard's favicon (apps/web/public/
+// favicon.ico) — shown in MetaEditor's Navigator/tester next to this EA.
+#property icon "\\Images\\logo.ico"
 
 // Native on-chart UI (Panel/LevelLines/PositionLines) is retired as of the
 // web re-platform's Phase B — the browser dashboard is the primary UI now.
@@ -65,6 +68,18 @@ CBridgeHandlers g_bridgeHandlers;
 CLaunchButton   g_launchBtn;
 bool            g_bridgeWasConnected = false;
 
+// The symbol every bridge-facing trading/data call below actually acts on
+// (risk preview, order send/modify/close, position scan, journal scan,
+// tick/symbol pushes) — independent of the chart's own _Symbol. Starts on
+// the chart's symbol (the normal case) and switches on a web-client
+// symbol.select message (see CBridgeHandlers::HandleSymbolSelect), letting
+// the web dashboard trade XAUUSD/BTCUSD/ETHUSD (see SYMBOL_WATCHLIST in
+// packages/protocol) from one EA instance without needing a second chart.
+// Only one symbol is ever "active" at a time — switching away hides that
+// symbol's positions/journal from the web view until switched back, exactly
+// like a single-symbol panel always behaved, just now selectable.
+string          g_activeSymbol = "";
+
 #define XAUT_TICK_PUSH_MIN_MS 150
 ulong g_lastTickPushMs = 0;
 
@@ -97,6 +112,7 @@ ulong g_lastPositionScanMs = 0;
 int OnInit()
   {
    g_currency = AccountInfoString(ACCOUNT_CURRENCY);
+   g_activeSymbol = _Symbol;
    g_orderMgr.Init(InpMagicNumber, InpDeviationPoints, "XAU-Trader");
 
 #ifdef XAUT_LEGACY_PANEL
@@ -373,7 +389,7 @@ void ScanPositionsDataThrottled()
 //+------------------------------------------------------------------+
 void ScanPositionsData()
   {
-   CPositionTracker::ScanSymbol(_Symbol, g_lastPositions);
+   CPositionTracker::ScanSymbol(g_activeSymbol, g_lastPositions);
 #ifdef XAUT_LEGACY_PANEL
    g_panel.SetPositions(g_lastPositions);
 #endif
@@ -406,8 +422,9 @@ void ScanAndRenderPositions()
 void UpdateData()
   {
    // Always refreshed — the bridge's tick/symbol pushes need it regardless
-   // of whether the legacy panel is active.
-   g_lastSym = CSymbolInfoCache::Read(_Symbol);
+   // of whether the legacy panel is active. Reads g_activeSymbol, not
+   // _Symbol — see its declaration above.
+   g_lastSym = CSymbolInfoCache::Read(g_activeSymbol);
 #ifdef XAUT_LEGACY_PANEL
    STradePlan plan = g_panel.GetPlan();
 
@@ -556,10 +573,10 @@ void BridgeMaintain()
    string lines[];
    int count = g_bridge.PollLines(lines);
    for(int i = 0; i < count; i++)
-      if(g_bridgeHandlers.Dispatch(g_bridge, g_orderMgr, _Symbol, lines[i]))
+      if(g_bridgeHandlers.Dispatch(g_bridge, g_orderMgr, g_activeSymbol, lines[i]))
          positionsChanged = true;
 
-   if(g_bridgeHandlers.FlushPendingModify(g_bridge, g_orderMgr, _Symbol))
+   if(g_bridgeHandlers.FlushPendingModify(g_bridge, g_orderMgr, g_activeSymbol))
       positionsChanged = true;
 
    if(positionsChanged)
@@ -581,7 +598,7 @@ void PushBridgeTickThrottled()
    if(now - g_lastTickPushMs < XAUT_TICK_PUSH_MIN_MS)
       return;
    g_lastTickPushMs = now;
-   g_bridge.SendLine(CProtocol::BuildTick(_Symbol, g_lastSym.bid, g_lastSym.ask, TimeCurrent()));
+   g_bridge.SendLine(CProtocol::BuildTick(g_activeSymbol, g_lastSym.bid, g_lastSym.ask, TimeCurrent()));
   }
 
 void PushBridgeStateThrottled()
@@ -601,6 +618,6 @@ void PushBridgeStateThrottled()
 
    g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
 
-   g_bridgeHandlers.PushNewDeals(g_bridge, _Symbol);
+   g_bridgeHandlers.PushNewDeals(g_bridge, g_activeSymbol);
   }
 //+------------------------------------------------------------------+

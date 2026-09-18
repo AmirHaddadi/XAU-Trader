@@ -95,6 +95,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     journalDeals,
     journalComments,
     requestBars,
+    selectSymbol,
     previewRisk,
     sendOrder,
     modifyPosition,
@@ -148,6 +149,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   const gridVisible = settings?.chartGridVisible ?? true;
   const drawings = settings?.chartDrawings ?? [];
   const magnetEnabled = settings?.magnetEnabled ?? false;
+  const crosshairEnabled = settings?.crosshairEnabled ?? true;
 
   const requestedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -306,6 +308,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
         tick={tick}
         theme={settings?.theme ?? "dark"}
         onThemeToggle={() => updateSettings({ theme: settings?.theme === "light" ? "dark" : "light" })}
+        onSymbolSelect={selectSymbol}
       />
 
       {/* Always mounted, hidden via CSS rather than conditionally rendered —
@@ -325,6 +328,8 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
             onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
             magnetEnabled={magnetEnabled}
             onMagnetToggle={() => updateSettings({ magnetEnabled: !magnetEnabled })}
+            crosshairEnabled={crosshairEnabled}
+            onCrosshairToggle={() => updateSettings({ crosshairEnabled: !crosshairEnabled })}
             activeTool={activeDrawingTool}
             onToolChange={handleToolChange}
             selectMode={selectMode}
@@ -354,6 +359,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
               onDeleteSelectedDrawings={handleDeleteSelectedDrawings}
               selectMode={selectMode}
               magnetEnabled={magnetEnabled}
+              crosshairEnabled={crosshairEnabled}
               hasMoreHistory={hasMoreHistory}
               loadingOlderBars={loadingOlderBars}
               onRequestOlderBars={handleRequestOlderBars}

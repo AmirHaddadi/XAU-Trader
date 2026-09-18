@@ -68,7 +68,11 @@ public:
 
    //--- Returns true if positions likely changed and the caller should
    //--- re-scan/re-render/re-push (same idea as ScanAndRenderPositions()).
-   bool Dispatch(CSocketClient &client, COrderManager &orderMgr, const string symbol, const string line)
+   //--- `activeSymbol` is a reference, not a plain value, specifically so
+   //--- HandleSymbolSelect() below can switch it in place — every other
+   //--- branch just reads whatever it currently holds. See XAU_Trader.mq5's
+   //--- g_activeSymbol, the only thing this reference ever actually points at.
+   bool Dispatch(CSocketClient &client, COrderManager &orderMgr, string &activeSymbol, const string line)
      {
       string msgType = CJsonUtils::ExtractType(line);
       string reqId = CJsonUtils::ExtractReqId(line);
@@ -78,15 +82,25 @@ public:
          HandleBarsRequest(client, line);
          return false;
         }
+      if(msgType == "symbol.select")
+        {
+         HandleSymbolSelect(client, activeSymbol, line);
+         // Positions/journal are scoped to whichever symbol is active (see
+         // ScanPositionsData()) — true here piggybacks on the caller's
+         // existing "re-scan and re-push" path so switching symbol refreshes
+         // the positions panel immediately instead of waiting out the next
+         // 1000ms throttled push.
+         return true;
+        }
       if(msgType == "risk.preview")
         {
-         HandleRiskPreview(client, symbol, reqId, line);
+         HandleRiskPreview(client, activeSymbol, reqId, line);
          return false;
         }
       if(msgType == "order.send")
-         return HandleOrderSend(client, orderMgr, symbol, reqId, line);
+         return HandleOrderSend(client, orderMgr, activeSymbol, reqId, line);
       if(msgType == "order.modifyPending")
-         return HandleOrderModifyPending(client, orderMgr, symbol, reqId, line);
+         return HandleOrderModifyPending(client, orderMgr, activeSymbol, reqId, line);
       if(msgType == "order.modifyPosition")
         {
          // The real ModifyPosition call happens in FlushPendingModify(),
@@ -100,12 +114,12 @@ public:
       if(msgType == "order.close")
          return HandleOrderClose(client, orderMgr, reqId, line);
       if(msgType == "order.closePartial")
-         return HandleOrderClosePartial(client, orderMgr, symbol, reqId, line);
+         return HandleOrderClosePartial(client, orderMgr, activeSymbol, reqId, line);
       if(msgType == "order.cancel")
          return HandleOrderCancel(client, orderMgr, reqId, line);
       if(msgType == "history.request")
         {
-         HandleHistoryRequest(client, symbol, reqId, line);
+         HandleHistoryRequest(client, activeSymbol, reqId, line);
          return false;
         }
 
@@ -169,6 +183,26 @@ public:
      }
 
 private:
+   //--- Switches the EA's active trading symbol and immediately pushes a
+   //--- fresh symbol/tick snapshot for it — instant feedback rather than
+   //--- waiting out PushBridgeStateThrottled's 1000ms cadence, same
+   //--- reasoning as ScanAndRenderPositions()'s own instant re-push.
+   //--- CSymbolInfoCache::Read() already calls SymbolSelect() internally, so
+   //--- this also silently (re-)adds the symbol to Market Watch if needed.
+   void HandleSymbolSelect(CSocketClient &client, string &activeSymbol, const string line)
+     {
+      string next = CProtocol::ReadSelectSymbol(line);
+      if(next == "")
+         return;
+      activeSymbol = next;
+      SSymbolSnapshot sym = CSymbolInfoCache::Read(activeSymbol);
+      if(sym.valid)
+        {
+         client.SendLine(CProtocol::BuildSymbol(sym));
+         client.SendLine(CProtocol::BuildTick(sym.symbol, sym.bid, sym.ask, TimeCurrent()));
+        }
+     }
+
    void HandleHistoryRequest(CSocketClient &client, const string symbol, const string reqId, const string line)
      {
       ulong sinceTicket = CProtocol::ReadHistoryRequestSinceTicket(line);
