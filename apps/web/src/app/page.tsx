@@ -10,14 +10,30 @@ import { readChartPalette } from "@/lib/theme";
 import { applyCustomColors } from "@/lib/applyCustomColors";
 import { ToastProvider, useToast } from "@/lib/toast";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { useResizable } from "@/lib/useResizable";
+import { useFullscreen } from "@/lib/useFullscreen";
 import type { Timeframe } from "@/lib/timeframes";
 import { TopBar } from "@/components/TopBar";
 import { PositionsBar } from "@/components/PositionsBar";
 import { LiveChart } from "@/components/LiveChart";
 import { ChartToolbar } from "@/components/ChartToolbar";
 import { MoneyPanel } from "@/components/MoneyPanel";
+import { ResizeHandle } from "@/components/ResizeHandle";
+import { EdgeReveal } from "@/components/EdgeReveal";
 import { Journal } from "@/components/Journal";
 import { SettingsPanel } from "@/components/SettingsPanel";
+
+// Clamp range for the drag-resizable chart<->MoneyPanel and chart-area<->
+// PositionsBar splits (lib/useResizable.ts) — generous enough to give a
+// section real dedicated room, never so wide/tall the other side stops
+// being usable.
+const MONEY_PANEL_WIDTH_MIN = 260;
+const MONEY_PANEL_WIDTH_MAX = 480;
+const POSITIONS_BAR_HEIGHT_MIN = 90;
+const POSITIONS_BAR_HEIGHT_MAX = 420;
+// Fixed header height while in fullscreen (it's a single compact row by
+// design — see TopBar.tsx — so it isn't user-resizable there).
+const FULLSCREEN_HEADER_SIZE = 52;
 
 // Initial load: aggressive on purpose — this is a local, single-user,
 // resource-unconstrained setup (no network latency to a remote history
@@ -84,6 +100,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     account,
     symbol,
     positions,
+    pendingOrders,
     bars,
     liveBar,
     hasMoreHistory,
@@ -101,6 +118,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     modifyPosition,
     closePosition,
     closePositionPartial,
+    cancelPending,
     updateSettings,
     requestJournal,
     requestComments,
@@ -145,6 +163,30 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     errorFallbackMessage: t("orderFailed"),
   });
 
+  const { isFullscreen, toggle: toggleFullscreen } = useFullscreen();
+
+  const { size: moneyPanelWidth, dragHandlers: moneyPanelDrag } = useResizable({
+    axis: "x",
+    value: settings?.moneyPanelWidth ?? 320,
+    min: MONEY_PANEL_WIDTH_MIN,
+    max: MONEY_PANEL_WIDTH_MAX,
+    // The handle sits to the panel's left — dragging it right shrinks the
+    // panel (gives the chart more room), dragging left grows it.
+    invert: true,
+    onCommit: (w) => updateSettings({ moneyPanelWidth: w }),
+  });
+
+  const { size: positionsBarHeight, dragHandlers: positionsBarDrag } = useResizable({
+    axis: "y",
+    value: settings?.positionsBarHeight ?? 220,
+    min: POSITIONS_BAR_HEIGHT_MIN,
+    max: POSITIONS_BAR_HEIGHT_MAX,
+    // The handle sits above the panel — dragging it down shrinks the panel
+    // (gives the chart row above more room), dragging up grows it.
+    invert: true,
+    onCommit: (h) => updateSettings({ positionsBarHeight: h }),
+  });
+
   const timeframe = settings?.chartTimeframe ?? "M1";
   const gridVisible = settings?.chartGridVisible ?? true;
   const drawings = settings?.chartDrawings ?? [];
@@ -176,6 +218,7 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   const digits = symbol?.digits ?? 2;
   const selectionColor =
     (selectedDrawingIds.length > 0 && drawings.find((d) => d.id === selectedDrawingIds[0])?.color) || readChartPalette().accent;
+  const defaultDrawingColor = settings?.lastDrawingColor || readChartPalette().accent;
 
   const lines = useMemo<DraggableLine[]>(() => {
     const palette = readChartPalette();
@@ -248,6 +291,13 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
     setActiveDrawingTool(null);
   }
 
+  // Move/reshape (see lib/drawingTools.ts's drag handling) — the controller
+  // already computed the new point(s) locally and only calls this once, on
+  // pointerup, so this is a single settings write per drag, not per frame.
+  function handleDrawingUpdated(updated: Drawing) {
+    updateSettings({ chartDrawings: drawings.map((d) => (d.id === updated.id ? updated : d)) });
+  }
+
   function handleToolChange(tool: DrawingTool | null) {
     setActiveDrawingTool(tool);
     if (tool) setSelectMode(false); // mutually exclusive with the Selector tool
@@ -271,7 +321,10 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   function handleSelectionColorChange(color: string) {
     if (selectedDrawingIds.length === 0) return;
     const idSet = new Set(selectedDrawingIds);
-    updateSettings({ chartDrawings: drawings.map((d) => (idSet.has(d.id) ? { ...d, color } : d)) });
+    // Also persisted as lastDrawingColor — every drawing placed *after* this
+    // one defaults to whatever was just picked here (Amir: stop resetting
+    // to the theme accent every time), see defaultDrawingColor below.
+    updateSettings({ chartDrawings: drawings.map((d) => (idSet.has(d.id) ? { ...d, color } : d)), lastDrawingColor: color });
   }
 
   // "Risk-Free": moves a position's SL to entry +/- riskFreePips (raw
@@ -296,20 +349,29 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
   }
 
   return (
-    <main className="flex h-dvh flex-col gap-3 p-3">
-      <TopBar
-        tab={tab}
-        onTabChange={setTab}
-        symbol={symbol}
-        wsConnected={wsConnected}
-        eaConnected={eaConnected}
-        lastError={lastError}
-        account={account}
-        tick={tick}
-        theme={settings?.theme ?? "dark"}
-        onThemeToggle={() => updateSettings({ theme: settings?.theme === "light" ? "dark" : "light" })}
-        onSymbolSelect={selectSymbol}
-      />
+    <main className={`flex h-dvh flex-col ${isFullscreen ? "gap-0 p-0" : "gap-3 p-3"}`}>
+      {/* Fullscreen (Amir: give the chart the whole browser window) takes
+          the header out of flow entirely and brings it back as a hover
+          overlay — EdgeReveal is an inert passthrough outside fullscreen,
+          so this wrapper never changes TopBar's own position in the tree
+          (nothing here risks the LiveChart-remount trap below). */}
+      <EdgeReveal active={isFullscreen} edge="top" size={FULLSCREEN_HEADER_SIZE}>
+        <TopBar
+          tab={tab}
+          onTabChange={setTab}
+          symbol={symbol}
+          wsConnected={wsConnected}
+          eaConnected={eaConnected}
+          lastError={lastError}
+          account={account}
+          tick={tick}
+          theme={settings?.theme ?? "dark"}
+          onThemeToggle={() => updateSettings({ theme: settings?.theme === "light" ? "dark" : "light" })}
+          onSymbolSelect={selectSymbol}
+          isFullscreen={isFullscreen}
+          onFullscreenToggle={toggleFullscreen}
+        />
+      </EdgeReveal>
 
       {/* Always mounted, hidden via CSS rather than conditionally rendered —
           unmounting used to destroy and recreate the whole lightweight-charts
@@ -318,87 +380,113 @@ function Shell({ bridge }: { bridge: ReturnType<typeof useBridgeSocket> }) {
           *current* liveBar against a stale initial `bars` snapshot,
           silently dropping every candle that closed while away (reported
           live). Keeping it mounted means series.update() keeps applying
-          every tick in the background, so nothing is ever missed. */}
-      <div className={`grid min-h-0 flex-1 grid-cols-[1fr_320px] gap-3 ${tab === "dashboard" ? "" : "hidden"}`}>
-        <div className="flex min-h-0 flex-col rounded-lg border border-border bg-card">
-          <ChartToolbar
-            timeframe={timeframe}
-            onTimeframeChange={handleTimeframeChange}
-            gridVisible={gridVisible}
-            onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
-            magnetEnabled={magnetEnabled}
-            onMagnetToggle={() => updateSettings({ magnetEnabled: !magnetEnabled })}
-            crosshairEnabled={crosshairEnabled}
-            onCrosshairToggle={() => updateSettings({ crosshairEnabled: !crosshairEnabled })}
-            activeTool={activeDrawingTool}
-            onToolChange={handleToolChange}
-            selectMode={selectMode}
-            onSelectModeToggle={handleSelectModeToggle}
-            selectionCount={selectedDrawingIds.length}
-            onDeleteSelected={handleDeleteSelectedDrawings}
-            selectionColor={selectionColor}
-            onSelectionColorChange={handleSelectionColorChange}
-          />
-          <div className="min-h-0 flex-1 p-2">
-            <LiveChart
-              bars={bars}
-              barsAppendedOlderCount={barsAppendedOlderCount}
-              barsResyncEpoch={barsResyncEpoch}
-              liveBar={liveBar}
+          every tick in the background, so nothing is ever missed. Chart's
+          own wrapping div below never changes shape between fullscreen
+          states — only sizing/gaps around it do — for the same reason. */}
+      <div className={`flex min-h-0 flex-1 flex-col ${isFullscreen ? "gap-0" : "gap-3"} ${tab === "dashboard" ? "" : "hidden"}`}>
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-lg border border-border bg-card">
+            <ChartToolbar
               timeframe={timeframe}
+              onTimeframeChange={handleTimeframeChange}
               gridVisible={gridVisible}
-              theme={settings?.theme ?? "dark"}
-              customColors={settings?.theme === "light" ? settings?.customColorsLight : settings?.customColorsDark}
-              lines={lines}
-              onLineDrag={handleLineDrag}
-              onLineDragEnd={handleLineDrag}
-              drawings={drawings}
-              activeDrawingTool={activeDrawingTool}
-              onDrawingCreated={handleDrawingCreated}
-              onDrawingSelectedChange={setSelectedDrawingIds}
-              onDeleteSelectedDrawings={handleDeleteSelectedDrawings}
-              selectMode={selectMode}
+              onGridToggle={() => updateSettings({ chartGridVisible: !gridVisible })}
               magnetEnabled={magnetEnabled}
+              onMagnetToggle={() => updateSettings({ magnetEnabled: !magnetEnabled })}
               crosshairEnabled={crosshairEnabled}
-              hasMoreHistory={hasMoreHistory}
-              loadingOlderBars={loadingOlderBars}
-              onRequestOlderBars={handleRequestOlderBars}
+              onCrosshairToggle={() => updateSettings({ crosshairEnabled: !crosshairEnabled })}
+              activeTool={activeDrawingTool}
+              onToolChange={handleToolChange}
+              selectMode={selectMode}
+              onSelectModeToggle={handleSelectModeToggle}
+              selectionCount={selectedDrawingIds.length}
+              onDeleteSelected={handleDeleteSelectedDrawings}
+              selectionColor={selectionColor}
+              onSelectionColorChange={handleSelectionColorChange}
+            />
+            <div className="min-h-0 flex-1 p-2">
+              <LiveChart
+                bars={bars}
+                barsAppendedOlderCount={barsAppendedOlderCount}
+                barsResyncEpoch={barsResyncEpoch}
+                liveBar={liveBar}
+                timeframe={timeframe}
+                gridVisible={gridVisible}
+                theme={settings?.theme ?? "dark"}
+                customColors={settings?.theme === "light" ? settings?.customColorsLight : settings?.customColorsDark}
+                lines={lines}
+                onLineDrag={handleLineDrag}
+                onLineDragEnd={handleLineDrag}
+                drawings={drawings}
+                activeDrawingTool={activeDrawingTool}
+                onDrawingCreated={handleDrawingCreated}
+                onDrawingUpdated={handleDrawingUpdated}
+                onDrawingSelectedChange={setSelectedDrawingIds}
+                onDeleteSelectedDrawings={handleDeleteSelectedDrawings}
+                defaultDrawingColor={defaultDrawingColor}
+                selectMode={selectMode}
+                magnetEnabled={magnetEnabled}
+                crosshairEnabled={crosshairEnabled}
+                hasMoreHistory={hasMoreHistory}
+                loadingOlderBars={loadingOlderBars}
+                onRequestOlderBars={handleRequestOlderBars}
+                positions={positions}
+                currency={account?.currency}
+                symbolMeta={symbol}
+                wsConnected={wsConnected}
+                eaConnected={eaConnected}
+              />
+            </div>
+          </div>
+
+          {/* Drag-resize (Amir: give the desired space to the desired
+              section) — hidden in fullscreen, where the panel is instead a
+              fixed-size hover overlay (see EdgeReveal below); resizing a
+              fixed-position overlay isn't a meaningful interaction there. */}
+          {!isFullscreen && <ResizeHandle orientation="vertical" label={t("resizeMoneyPanel")} {...moneyPanelDrag} />}
+
+          <EdgeReveal active={isFullscreen} edge="right" size={moneyPanelWidth}>
+            <div className={isFullscreen ? "h-full p-3" : "h-full"} style={isFullscreen ? undefined : { width: moneyPanelWidth }}>
+              <MoneyPanel
+                plan={plan}
+                reviewing={reviewing}
+                riskResult={riskResult}
+                riskError={riskError}
+                previewPending={previewPending}
+                busy={confirmBusy}
+                currency={account?.currency}
+                digits={digits}
+                onRiskModeChange={setRiskMode}
+                onRiskValueChange={setRiskValue}
+                onPlacementChange={setPlacement}
+                onRrRatioChange={setRrRatio}
+                onBuy={() => startReview("buy")}
+                onSell={() => startReview("sell")}
+                onConfirm={() => void runConfirmOrder()}
+                onCancel={cancelReview}
+              />
+            </div>
+          </EdgeReveal>
+        </div>
+
+        {!isFullscreen && <ResizeHandle orientation="horizontal" label={t("resizePositionsBar")} {...positionsBarDrag} />}
+
+        <EdgeReveal active={isFullscreen} edge="bottom" size={positionsBarHeight}>
+          <div
+            className={isFullscreen ? "h-full p-3" : ""}
+            style={isFullscreen ? undefined : { height: positionsBarHeight }}
+          >
+            <PositionsBar
               positions={positions}
-              currency={account?.currency}
-              symbolMeta={symbol}
-              wsConnected={wsConnected}
-              eaConnected={eaConnected}
+              pendingOrders={pendingOrders}
+              symbol={symbol}
+              onClose={closePosition}
+              onClosePartial={closePositionPartial}
+              onRiskFree={handleRiskFree}
+              onCancelPending={cancelPending}
             />
           </div>
-        </div>
-        <MoneyPanel
-          plan={plan}
-          reviewing={reviewing}
-          riskResult={riskResult}
-          riskError={riskError}
-          previewPending={previewPending}
-          busy={confirmBusy}
-          currency={account?.currency}
-          digits={digits}
-          onRiskModeChange={setRiskMode}
-          onRiskValueChange={setRiskValue}
-          onPlacementChange={setPlacement}
-          onRrRatioChange={setRrRatio}
-          onBuy={() => startReview("buy")}
-          onSell={() => startReview("sell")}
-          onConfirm={() => void runConfirmOrder()}
-          onCancel={cancelReview}
-        />
-      </div>
-
-      <div className={tab === "dashboard" ? "" : "hidden"}>
-        <PositionsBar
-          positions={positions}
-          symbol={symbol}
-          onClose={closePosition}
-          onClosePartial={closePositionPartial}
-          onRiskFree={handleRiskFree}
-        />
+        </EdgeReveal>
       </div>
 
       {tab === "journal" && (

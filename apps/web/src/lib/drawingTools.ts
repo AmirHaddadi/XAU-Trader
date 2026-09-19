@@ -7,6 +7,12 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
 const HIT_TOLERANCE_PX = 6;
 const MAGNET_TOLERANCE_PX = 10;
+// Radius of the small draggable endpoint handles shown on the single
+// currently-selected drawing (reshape — moves just that one anchor) — kept
+// noticeably bigger for hit-testing than for drawing, matching the usual
+// "fat finger" affordance for a small target.
+const HANDLE_RADIUS_PX = 4;
+const HANDLE_HIT_RADIUS_PX = 9;
 // A pointer down->up with less movement than this, while in select mode, is
 // treated as a plain click-to-select rather than a marquee drag.
 const CLICK_DRAG_THRESHOLD_PX = 4;
@@ -56,7 +62,34 @@ export class DrawingLayerController {
   private marqueeCurrent: Px | null = null;
   private marqueeAdditive = false;
 
+  // Whole-drawing move / single-endpoint reshape (Amir: "جا به جا کردن" —
+  // move an already-placed drawing). Both share one gesture: pointerdown
+  // hits either a selected drawing's endpoint handle (reshape just that
+  // point) or the drawing's own body (move every point by the same pixel
+  // delta), tracked in pixel-space from the original points so magnet
+  // snapping (if enabled) can still apply per-frame the same way a fresh
+  // placement does. Committed to onUpdated only on pointerup — mid-drag
+  // frames stay purely local (dragPreview) rather than round-tripping
+  // through updateSettings on every pointermove, avoiding WS/settings-db
+  // spam per pixel of movement (same "commit once" shape a fresh
+  // placement's own single onCreated call already has).
+  private dragState: { id: string; startClientX: number; startClientY: number; originalPoints: DrawingPoint[] } | null = null;
+  private dragHandleIndex: number | null = null;
+  private dragMoved = false;
+  private dragPreview: { id: string; points: DrawingPoint[] } | null = null;
+  // Set right before a drag-originated pointerup so the "click" event the
+  // browser still dispatches for that same gesture (capture-phase
+  // handleClick, a separate listener) doesn't also re-run plain
+  // click-to-select logic against a now-stale hit-test.
+  private suppressNextClick = false;
+  // Last color the user actually chose (Settings.lastDrawingColor) — new
+  // drawings default to this instead of always falling back to the theme
+  // accent (Amir: new elements should keep reusing whatever color was last
+  // set, not reset every time). null until the app has loaded a real value.
+  private defaultDrawColor: string | null = null;
+
   private onCreated: (drawing: Drawing) => void = () => {};
+  private onUpdated: (drawing: Drawing) => void = () => {};
   private onSelectedChange: (ids: string[]) => void = () => {};
   private onDeleteRequested: () => void = () => {};
 
@@ -90,10 +123,25 @@ export class DrawingLayerController {
     window.addEventListener("resize", this.render);
   }
 
-  setCallbacks(onCreated: (drawing: Drawing) => void, onSelectedChange: (ids: string[]) => void, onDeleteRequested: () => void): void {
+  setCallbacks(
+    onCreated: (drawing: Drawing) => void,
+    onSelectedChange: (ids: string[]) => void,
+    onDeleteRequested: () => void,
+    onUpdated: (drawing: Drawing) => void,
+  ): void {
     this.onCreated = onCreated;
     this.onSelectedChange = onSelectedChange;
     this.onDeleteRequested = onDeleteRequested;
+    this.onUpdated = onUpdated;
+  }
+
+  // Settings.lastDrawingColor, re-synced whenever it changes (theme switch
+  // doesn't affect it — this is a user choice, not a palette value) — see
+  // page.tsx. Used both as the color newly-finalized drawings are stamped
+  // with (see finalize()) and as the fallback render color for drawings
+  // that predate this field / were never explicitly colored.
+  setDefaultColor(color: string | undefined): void {
+    this.defaultDrawColor = color ?? null;
   }
 
   setDrawings(drawings: Drawing[]): void {
@@ -172,8 +220,14 @@ export class DrawingLayerController {
 
   private toPoint(clientX: number, clientY: number): DrawingPoint | null {
     const rect = this.container.getBoundingClientRect();
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
+    return this.fromPixel(clientX - rect.left, clientY - rect.top);
+  }
+
+  // Shared by toPoint() (new placements, container-relative from a raw
+  // client event) and the move/reshape drag below (already container-
+  // relative pixels, translated by the drag delta) — same coordinate ->
+  // DrawingPoint resolution either way, magnet snap included.
+  private fromPixel(x: number, y: number): DrawingPoint | null {
     const price = this.series.coordinateToPrice(y as Coordinate);
     if (price == null) return null;
 
@@ -224,8 +278,14 @@ export class DrawingLayerController {
     // Selector-mode (or Ctrl/Cmd-held) single clicks are fully owned by the
     // pointerdown/up pair below (handleSelectPointerUp) — this "click"
     // event fires from the exact same gesture and would otherwise
-    // double-handle it.
+    // double-handle it. Same reasoning for a just-finished move/reshape
+    // drag (handleSelectPointerDown/Up below) — this click is the tail end
+    // of that same gesture, not a fresh one.
     if (this.isMultiSelectGesture(e)) return;
+    if (this.suppressNextClick) {
+      this.suppressNextClick = false;
+      return;
+    }
 
     if (!this.activeTool) {
       this.handleSelectClick(e);
@@ -269,25 +329,104 @@ export class DrawingLayerController {
   };
 
   // Intercepted in capture phase, same reasoning as priceLineDrag.ts: block
-  // the chart's own pan gesture for the duration of a marquee drag. Active
-  // while the explicit Selector tool is on, or Ctrl/Cmd is held (see
-  // isMultiSelectGesture) — plain pan mode's single click
-  // (handleClick/handleSelectClick above) is untouched so ordinary panning
-  // still works the rest of the time.
+  // the chart's own pan gesture for the duration of a marquee drag *or* a
+  // drawing move/reshape drag. Marquee/Ctrl-select takes priority (checked
+  // first) since it's the more specific gesture; otherwise, in plain
+  // pan/select mode, a hit on the single selected drawing's endpoint handle
+  // starts a reshape and a hit on any drawing's body starts a whole-shape
+  // move — ordinary panning on empty chart space is untouched.
   private handleSelectPointerDown = (e: PointerEvent): void => {
-    if (!this.isMultiSelectGesture(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = this.container.getBoundingClientRect();
-    this.marqueeStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    this.marqueeCurrent = this.marqueeStart;
-    // Shift adds to the existing selection; Ctrl/Cmd alone (or the
-    // Selector tool) replaces it, matching most desktop apps' convention.
-    this.marqueeAdditive = e.shiftKey;
-    this.render();
+    if (this.isMultiSelectGesture(e)) {
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = this.container.getBoundingClientRect();
+      this.marqueeStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      this.marqueeCurrent = this.marqueeStart;
+      // Shift adds to the existing selection; Ctrl/Cmd alone (or the
+      // Selector tool) replaces it, matching most desktop apps' convention.
+      this.marqueeAdditive = e.shiftKey;
+      this.render();
+      return;
+    }
+    if (this.activeTool) return; // tool placement owns this gesture (handleClick)
+    this.tryStartDrawingDrag(e);
   };
 
+  private tryStartDrawingDrag(e: PointerEvent): void {
+    const rect = this.container.getBoundingClientRect();
+    const px = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+    // Reshape: only offered on the single currently-selected drawing, and
+    // only for multi-point tools (a ray/vline's one point dragging is
+    // identical to moving the whole thing, handled by the body-hit branch
+    // below).
+    if (this.selectedIds.size === 1) {
+      const id = Array.from(this.selectedIds)[0];
+      const drawing = this.drawings.find((d) => d.id === id);
+      if (drawing && drawing.points.length > 1) {
+        const handleIndex = this.hitTestHandle(drawing, px);
+        if (handleIndex !== null) {
+          e.preventDefault();
+          e.stopPropagation();
+          this.dragHandleIndex = handleIndex;
+          this.dragState = { id, startClientX: e.clientX, startClientY: e.clientY, originalPoints: drawing.points.map((p) => ({ ...p })) };
+          this.dragMoved = false;
+          return;
+        }
+      }
+    }
+
+    // Whole-shape move: hit-test every drawing's body (not just the
+    // selected one — clicking straight onto an unselected drawing both
+    // selects and immediately starts moving it, one gesture).
+    const hit = this.drawings.find((d) => this.hitTest(d, px));
+    if (!hit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.dragHandleIndex = null;
+    this.dragState = { id: hit.id, startClientX: e.clientX, startClientY: e.clientY, originalPoints: hit.points.map((p) => ({ ...p })) };
+    this.dragMoved = false;
+    if (!this.selectedIds.has(hit.id)) {
+      this.selectedIds = new Set([hit.id]);
+      this.onSelectedChange(Array.from(this.selectedIds));
+    }
+    this.render();
+  }
+
+  private hitTestHandle(drawing: Drawing, px: Px): number | null {
+    const effective = this.dragPreview?.id === drawing.id ? this.dragPreview.points : drawing.points;
+    for (let i = 0; i < effective.length; i++) {
+      const p = this.toPixel(effective[i]);
+      if (p && Math.hypot(p.x - px.x, p.y - px.y) <= HANDLE_HIT_RADIUS_PX) return i;
+    }
+    return null;
+  }
+
+  private updateDrawingDrag(e: PointerEvent): void {
+    if (!this.dragState) return;
+    const dx = e.clientX - this.dragState.startClientX;
+    const dy = e.clientY - this.dragState.startClientY;
+    if (!this.dragMoved && Math.hypot(dx, dy) > CLICK_DRAG_THRESHOLD_PX) this.dragMoved = true;
+
+    const { id, originalPoints } = this.dragState;
+    const translate = (p: DrawingPoint): DrawingPoint => {
+      const px = this.toPixel(p);
+      if (!px) return p;
+      return this.fromPixel(px.x + dx, px.y + dy) ?? p;
+    };
+    const points =
+      this.dragHandleIndex !== null
+        ? originalPoints.map((p, i) => (i === this.dragHandleIndex ? translate(p) : p))
+        : originalPoints.map(translate);
+    this.dragPreview = { id, points };
+    this.render();
+  }
+
   private handleSelectPointerMove = (e: PointerEvent): void => {
+    if (this.dragState) {
+      this.updateDrawingDrag(e);
+      return;
+    }
     if (!this.marqueeStart) return;
     const rect = this.container.getBoundingClientRect();
     this.marqueeCurrent = { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -295,6 +434,24 @@ export class DrawingLayerController {
   };
 
   private handleSelectPointerUp = (): void => {
+    if (this.dragState) {
+      const { id } = this.dragState;
+      const moved = this.dragMoved;
+      const finalPoints = this.dragPreview?.points;
+      this.dragState = null;
+      this.dragHandleIndex = null;
+      this.dragPreview = null;
+      this.dragMoved = false;
+      if (moved && finalPoints) {
+        const drawing = this.drawings.find((d) => d.id === id);
+        if (drawing) {
+          this.suppressNextClick = true;
+          this.onUpdated({ ...drawing, points: finalPoints });
+        }
+      }
+      this.render();
+      return;
+    }
     if (!this.marqueeStart || !this.marqueeCurrent) return;
     const start = this.marqueeStart;
     const end = this.marqueeCurrent;
@@ -439,16 +596,35 @@ export class DrawingLayerController {
     // price line instead. onCreated's consumer (the toolbar) is expected
     // to reset its own "active tool" button state to match.
     this.activeTool = null;
-    this.onCreated(drawing);
+    // Stamp the last user-chosen color at creation time (Amir: a new
+    // element should keep reusing whatever color was last set, not reset
+    // to the theme accent every time) — see setDefaultColor().
+    this.onCreated(this.defaultDrawColor ? { ...drawing, color: this.defaultDrawColor } : drawing);
   }
 
   private render = (): void => {
     while (this.svg.firstChild) this.svg.removeChild(this.svg.firstChild);
     const paneWidth = this.chart.paneSize().width;
-    const defaultColor = getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() || "#d97757";
+    const defaultColor = this.defaultDrawColor || getComputedStyle(document.documentElement).getPropertyValue("--color-accent").trim() || "#d97757";
 
     for (const drawing of this.drawings) {
-      this.renderDrawing(drawing, drawing.color || defaultColor, this.selectedIds.has(drawing.id), paneWidth);
+      const effective = this.dragPreview?.id === drawing.id ? { ...drawing, points: this.dragPreview.points } : drawing;
+      this.renderDrawing(effective, drawing.color || defaultColor, this.selectedIds.has(drawing.id), paneWidth);
+    }
+
+    // Endpoint handles — only for the single currently-selected drawing
+    // (see tryStartDrawingDrag), and only when it actually has distinct
+    // endpoints to reshape.
+    if (this.selectedIds.size === 1) {
+      const id = Array.from(this.selectedIds)[0];
+      const selected = this.drawings.find((d) => d.id === id);
+      if (selected && selected.points.length > 1) {
+        const points = this.dragPreview?.id === id ? this.dragPreview.points : selected.points;
+        for (const p of points) {
+          const px = this.toPixel(p);
+          if (px) this.handleDot(px.x, px.y, selected.color || defaultColor);
+        }
+      }
     }
 
     // Live preview while placing the 2nd point of a trendline/box/fib
@@ -556,6 +732,26 @@ export class DrawingLayerController {
     el.setAttribute("opacity", String(opacity));
     el.textContent = content;
     this.svg.appendChild(el);
+  }
+
+  // Draggable-endpoint affordance — a small filled dot with a contrasting
+  // ring so it reads clearly against either a light or dark candle behind
+  // it, matching the "grab handle" look used by every real charting tool.
+  private handleDot(x: number, y: number, color: string): void {
+    const ring = document.createElementNS(SVG_NS, "circle");
+    ring.setAttribute("cx", String(x));
+    ring.setAttribute("cy", String(y));
+    ring.setAttribute("r", String(HANDLE_RADIUS_PX + 1.5));
+    ring.style.fill = "var(--color-card)";
+    ring.setAttribute("opacity", "0.9");
+    this.svg.appendChild(ring);
+
+    const dot = document.createElementNS(SVG_NS, "circle");
+    dot.setAttribute("cx", String(x));
+    dot.setAttribute("cy", String(y));
+    dot.setAttribute("r", String(HANDLE_RADIUS_PX));
+    dot.setAttribute("fill", color);
+    this.svg.appendChild(dot);
   }
 }
 

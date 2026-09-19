@@ -21,6 +21,9 @@ const DEFAULTS: Settings = {
   riskFreeConsiderSpread: true,
   crosshairEnabled: true,
   activeSymbol: "",
+  lastDrawingColor: "#d97757",
+  moneyPanelWidth: 320,
+  positionsBarHeight: 220,
 };
 
 export function getSettings(): Settings {

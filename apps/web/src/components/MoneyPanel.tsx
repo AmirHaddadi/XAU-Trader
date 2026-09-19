@@ -64,17 +64,17 @@ export function MoneyPanel({
   const canConfirm = reviewing && !busy && riskResult?.code === "ok" && riskResult.lots > 0;
 
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+    <div className="flex h-full min-w-0 flex-col gap-2.5 overflow-y-auto rounded-lg border border-border bg-card p-3.5">
       <h2 className="flex items-center gap-2 text-sm font-medium text-text-primary">
         <FontAwesomeIcon icon={faCoins} className="h-3.5 w-3.5 text-text-muted" />
         {t("moneyManagement")}
       </h2>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
+      <div className="grid grid-cols-2 gap-2.5">
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-text-muted">
           {t("sizingMode")}
           <select
-            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="w-full min-w-0 rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             value={plan.riskMode}
             onChange={(e) => onRiskModeChange(e.target.value as RiskMode)}
           >
@@ -86,22 +86,22 @@ export function MoneyPanel({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-text-muted">
           {t("riskValue")}
           <input
             type="number"
             step="0.1"
             min="0"
-            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary tabular-nums transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="w-full min-w-0 rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary tabular-nums transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             value={plan.riskValue}
             onChange={(e) => onRiskValueChange(Number(e.target.value))}
           />
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-text-muted">
           {t("orderType")}
           <select
-            className="rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+            className="w-full min-w-0 rounded border border-border bg-card-alt px-2 py-1.5 text-sm text-text-primary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             value={plan.placement}
             onChange={(e) => onPlacementChange(e.target.value as PlacementType)}
           >
@@ -113,12 +113,12 @@ export function MoneyPanel({
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 text-xs text-text-muted">
+        <label className="flex min-w-0 flex-col gap-1 text-xs text-text-muted">
           {t("rr")}
           <div className="flex items-center gap-1">
             <button
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
               disabled={plan.rrRatio <= XAUT_RR_MIN}
               onClick={() => onRrRatioChange(Math.max(XAUT_RR_MIN, plan.rrRatio - XAUT_RR_STEP))}
             >
@@ -127,7 +127,7 @@ export function MoneyPanel({
             <span className="flex-1 text-center text-sm tabular-nums text-text-primary">{plan.rrRatio.toFixed(1)}</span>
             <button
               type="button"
-              className="flex h-7 w-7 items-center justify-center rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border bg-card-alt text-text-primary transition-colors duration-150 hover:enabled:bg-border disabled:opacity-40"
               disabled={plan.rrRatio >= XAUT_RR_MAX}
               onClick={() => onRrRatioChange(Math.min(XAUT_RR_MAX, plan.rrRatio + XAUT_RR_STEP))}
             >
@@ -138,7 +138,7 @@ export function MoneyPanel({
       </div>
 
       {!reviewing ? (
-        <div className="grid grid-cols-2 gap-3 pt-1">
+        <div className="grid grid-cols-2 gap-2.5 pt-1">
           <button
             type="button"
             onClick={onBuy}
@@ -197,7 +197,7 @@ export function MoneyPanel({
               <Spinner /> {t("calculating")}
             </p>
           )}
-          <div className="grid grid-cols-2 gap-3 pt-1">
+          <div className="grid grid-cols-2 gap-2.5 pt-1">
             <button
               type="button"
               onClick={onCancel}

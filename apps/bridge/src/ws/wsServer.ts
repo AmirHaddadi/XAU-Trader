@@ -42,6 +42,7 @@ export function startWsServer(httpServer: HttpServer): void {
     if (liveState.account) send(ws, { type: "account", payload: liveState.account });
     if (liveState.tick) send(ws, { type: "tick", payload: liveState.tick });
     send(ws, { type: "positions", payload: { positions: liveState.positions } });
+    send(ws, { type: "pendingOrders", payload: { orders: liveState.pendingOrders } });
     send(ws, { type: "settings.data", payload: getSettings() });
 
     ws.on("message", (raw) => void handleBrowserMessage(ws, raw.toString("utf8")));
@@ -66,6 +67,7 @@ export function startWsServer(httpServer: HttpServer): void {
   eaLink.on("disconnected", () => broadcast(clients, { type: "ea.status", payload: { connected: false } }));
   eaLink.on("tick", (msg) => broadcast(clients, msg));
   eaLink.on("positions", (msg) => broadcast(clients, msg));
+  eaLink.on("pendingOrders", (msg) => broadcast(clients, msg));
   eaLink.on("account", (msg) => broadcast(clients, msg));
   eaLink.on("symbol", (msg) => broadcast(clients, msg));
   eaLink.on("bar.update", (msg) => broadcast(clients, msg));

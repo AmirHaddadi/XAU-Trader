@@ -10,6 +10,7 @@ import type {
   AccountSnapshot,
   Bar,
   ClosedDeal,
+  PendingOrderInfo,
   PositionInfo,
   RiskResult,
   SymbolMeta,
@@ -59,6 +60,12 @@ export type EaOrderAck = EaEnvelope<
 
 export type EaPositions = EaEnvelope<"positions", { positions: PositionInfo[] }>;
 
+// Pushed on the exact same cadence/triggers as EaPositions (see
+// CPositionTracker::ScanPendingSymbol / ScanPositionsData in the EA) — a
+// pending order and an open position are both "what's outstanding right
+// now" and need to refresh together.
+export type EaPendingOrders = EaEnvelope<"pendingOrders", { orders: PendingOrderInfo[] }>;
+
 export type EaAccount = EaEnvelope<"account", AccountSnapshot>;
 
 export type EaSymbol = EaEnvelope<"symbol", SymbolMeta>;
@@ -79,6 +86,7 @@ export type EaToBridgeMessage =
   | EaRiskResult
   | EaOrderAck
   | EaPositions
+  | EaPendingOrders
   | EaAccount
   | EaSymbol
   | EaHistoryNewDeals

@@ -1,4 +1,4 @@
-import type { AccountSnapshot, PositionInfo, SymbolMeta, Tick } from "@xau-trader/protocol";
+import type { AccountSnapshot, PendingOrderInfo, PositionInfo, SymbolMeta, Tick } from "@xau-trader/protocol";
 import { eaLink } from "../tcp/eaLink.js";
 
 // The latest-known snapshot of everything the EA pushes, so a browser tab
@@ -7,6 +7,7 @@ import { eaLink } from "../tcp/eaLink.js";
 class LiveState {
   tick: Tick | undefined;
   positions: PositionInfo[] = [];
+  pendingOrders: PendingOrderInfo[] = [];
   account: AccountSnapshot | undefined;
   symbol: SymbolMeta | undefined;
   eaConnected = false;
@@ -25,6 +26,9 @@ eaLink.on("tick", (msg: { payload: Tick }) => {
 });
 eaLink.on("positions", (msg: { payload: { positions: PositionInfo[] } }) => {
   liveState.positions = msg.payload.positions;
+});
+eaLink.on("pendingOrders", (msg: { payload: { orders: PendingOrderInfo[] } }) => {
+  liveState.pendingOrders = msg.payload.orders;
 });
 eaLink.on("account", (msg: { payload: AccountSnapshot }) => {
   liveState.account = msg.payload;

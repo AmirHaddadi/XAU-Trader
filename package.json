@@ -1,7 +1,7 @@
 {
   "name": "xau-trader-platform",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "XAU-Trader local web platform — Node bridge + Next.js client, driven by the MT5 Expert Advisor over a local socket.",
   "engines": {
     "node": ">=20"

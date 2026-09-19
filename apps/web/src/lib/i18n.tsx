@@ -23,6 +23,12 @@ const EN = {
   freeMargin: "Free Margin",
   openPositions: "Open Positions",
   noPositions: "No open positions",
+  pendingOrders: "Pending Orders",
+  noPendingOrders: "No pending orders",
+  price: "Price",
+  cancelOrder: "Cancel order",
+  orderCancelled: "Order cancelled",
+  orderCancelFailed: "Failed to cancel order",
   close: "Close",
   ticket: "Ticket",
   type: "Type",
@@ -143,6 +149,11 @@ const EN = {
   goLive: "Go Live",
   chartLoadingData: "Loading market data…",
   chartWaitingForConnection: "Waiting for connection…",
+  navMenuHint: "Open navigation menu",
+  fullscreenEnter: "Enter fullscreen — hover the edges to bring back the header/panels",
+  fullscreenExit: "Exit fullscreen",
+  resizeMoneyPanel: "Drag to resize the money management panel",
+  resizePositionsBar: "Drag to resize the positions panel",
 } as const;
 
 const FA: Record<keyof typeof EN, string> = {
@@ -160,6 +171,12 @@ const FA: Record<keyof typeof EN, string> = {
   freeMargin: "مارجین آزاد",
   openPositions: "پوزیشن‌های باز",
   noPositions: "پوزیشن بازی وجود ندارد",
+  pendingOrders: "سفارش‌های در انتظار",
+  noPendingOrders: "سفارش در انتظاری وجود ندارد",
+  price: "قیمت",
+  cancelOrder: "لغو سفارش",
+  orderCancelled: "سفارش لغو شد",
+  orderCancelFailed: "لغو سفارش ناموفق بود",
   close: "بستن",
   ticket: "تیکت",
   type: "نوع",
@@ -280,6 +297,11 @@ const FA: Record<keyof typeof EN, string> = {
   goLive: "بازگشت به لحظه‌ای",
   chartLoadingData: "در حال دریافت اطلاعات بازار...",
   chartWaitingForConnection: "در انتظار اتصال...",
+  navMenuHint: "باز کردن منوی ناوبری",
+  fullscreenEnter: "تمام‌صفحه — با نزدیک شدن موس به لبه‌ها، هدر/پنل‌ها دوباره نمایان می‌شوند",
+  fullscreenExit: "خروج از تمام‌صفحه",
+  resizeMoneyPanel: "با کشیدن، اندازه پنل مدیریت سرمایه را تغییر دهید",
+  resizePositionsBar: "با کشیدن، اندازه پنل پوزیشن‌ها را تغییر دهید",
 };
 
 export type TranslationKey = keyof typeof EN;

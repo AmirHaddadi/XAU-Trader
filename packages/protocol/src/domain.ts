@@ -98,6 +98,25 @@ export interface PositionInfo {
   timeOpen: number; // epoch seconds
 }
 
+// Mirrors ENUM_ORDER_TYPE filtered to the four pending types this EA ever
+// places (COrderManager::Send) — a stop-limit or anything else placed by
+// hand/another EA is skipped by the scanner rather than mis-labeled here.
+export type PendingOrderType = "buy_limit" | "sell_limit" | "buy_stop" | "sell_stop";
+
+// Mirrors SPendingOrderInfo — a not-yet-filled order, MT5's separate
+// OrdersTotal()/OrderGetTicket() list (as opposed to PositionInfo above,
+// which is an already-open position).
+export interface PendingOrderInfo {
+  ticket: number;
+  type: PendingOrderType;
+  volume: number;
+  priceOpen: number; // the trigger/entry price the order will fill at
+  sl: number;
+  tp: number;
+  magic: number;
+  timePlaced: number; // epoch seconds
+}
+
 export interface AccountSnapshot {
   balance: number;
   equity: number;

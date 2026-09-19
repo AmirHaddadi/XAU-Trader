@@ -10,6 +10,7 @@ import type {
   ClosedDeal,
   Drawing,
   JournalComment,
+  PendingOrderInfo,
   PlacementType,
   PositionInfo,
   RiskMode,
@@ -35,6 +36,9 @@ export type WsBarsData = WsEnvelope<"bars.data", { symbol: string; timeframe: st
 export type WsRiskResult = WsEnvelope<"risk.result", RiskResult>;
 export type WsOrderAck = WsEnvelope<"order.ack", { ok: boolean; message: string; ticket?: number }>;
 export type WsPositions = WsEnvelope<"positions", { positions: PositionInfo[] }>;
+// Relayed straight through from EaPendingOrders on the same cadence/
+// triggers as WsPositions — see ea-protocol.ts's EaPendingOrders.
+export type WsPendingOrders = WsEnvelope<"pendingOrders", { orders: PendingOrderInfo[] }>;
 export type WsAccount = WsEnvelope<"account", AccountSnapshot>;
 export type WsSymbol = WsEnvelope<"symbol", SymbolMeta>;
 
@@ -77,6 +81,17 @@ export interface Settings {
   // snapping back to XAUUSD mid-weekend-test (see wsServer.ts's eaLink
   // "connected" handler).
   activeSymbol: string;
+  // The color the user most recently applied to a chart drawing (toolbar's
+  // selection color picker) — every newly-placed drawing defaults to this
+  // instead of always resetting to the theme accent, so picking a color
+  // once "sticks" for the rest of the session (and across restarts).
+  lastDrawingColor: string;
+  // Chart-vs-MoneyPanel and chart-area-vs-PositionsBar split sizes, set by
+  // dragging the resize handles between them (see lib/useResizable.ts).
+  // Persisted like every other layout preference here so a reload doesn't
+  // reset a deliberately-chosen layout.
+  moneyPanelWidth: number;
+  positionsBarHeight: number;
 }
 
 export type WsSettings = WsEnvelope<"settings.data", Settings>;
@@ -120,6 +135,7 @@ export type BridgeToBrowserMessage =
   | WsRiskResult
   | WsOrderAck
   | WsPositions
+  | WsPendingOrders
   | WsAccount
   | WsSymbol
   | WsJournalUpdate

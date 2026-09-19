@@ -46,5 +46,45 @@ public:
       ArrayResize(out, count);
       return count;
      }
+
+   //--- Every not-yet-filled pending order on `symbol` — MT5's separate
+   //--- OrdersTotal()/OrderGetTicket() API, since a pending order has no
+   //--- position yet. Only the four types this EA itself ever places
+   //--- (OrderManager::Send's BuyLimit/SellLimit/BuyStop/SellStop) are
+   //--- recognized; anything else (e.g. a stop-limit placed by hand or
+   //--- another EA) is skipped rather than mis-labeled — same "don't guess"
+   //--- posture as PositionTypeToString's own narrow mapping.
+   static int ScanPendingSymbol(const string symbol, SPendingOrderInfo &out[])
+     {
+      int total = OrdersTotal();
+      ArrayResize(out, total);
+      int count = 0;
+      for(int i = 0; i < total; i++)
+        {
+         ulong ticket = OrderGetTicket(i);
+         if(ticket == 0)
+            continue;
+         if(!OrderSelect(ticket))
+            continue;
+         if(OrderGetString(ORDER_SYMBOL) != symbol)
+            continue;
+         ENUM_ORDER_TYPE type = (ENUM_ORDER_TYPE)OrderGetInteger(ORDER_TYPE);
+         if(type != ORDER_TYPE_BUY_LIMIT && type != ORDER_TYPE_SELL_LIMIT &&
+            type != ORDER_TYPE_BUY_STOP && type != ORDER_TYPE_SELL_STOP)
+            continue;
+
+         out[count].ticket     = ticket;
+         out[count].type       = type;
+         out[count].volume     = OrderGetDouble(ORDER_VOLUME_CURRENT);
+         out[count].priceOpen  = OrderGetDouble(ORDER_PRICE_OPEN);
+         out[count].sl         = OrderGetDouble(ORDER_SL);
+         out[count].tp         = OrderGetDouble(ORDER_TP);
+         out[count].magic      = OrderGetInteger(ORDER_MAGIC);
+         out[count].timePlaced = (datetime)OrderGetInteger(ORDER_TIME_SETUP);
+         count++;
+        }
+      ArrayResize(out, count);
+      return count;
+     }
   };
 //+------------------------------------------------------------------+

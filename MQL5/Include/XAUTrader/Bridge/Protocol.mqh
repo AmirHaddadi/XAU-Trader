@@ -80,6 +80,24 @@ public:
       return Envelope("positions", "{\"positions\":[" + items + "]}");
      }
 
+   static string BuildPendingOrders(const SPendingOrderInfo &orders[])
+     {
+      string items = "";
+      int total = ArraySize(orders);
+      for(int i = 0; i < total; i++)
+        {
+         if(i > 0)
+            items += ",";
+         items += StringFormat(
+            "{\"ticket\":%d,\"type\":\"%s\",\"volume\":%.2f,\"priceOpen\":%.5f,\"sl\":%.5f,"
+            "\"tp\":%.5f,\"magic\":%d,\"timePlaced\":%d}",
+            orders[i].ticket, OrderTypeToString(orders[i].type),
+            orders[i].volume, orders[i].priceOpen, orders[i].sl, orders[i].tp,
+            orders[i].magic, (long)orders[i].timePlaced);
+        }
+      return Envelope("pendingOrders", "{\"orders\":[" + items + "]}");
+     }
+
    static string BuildBarsData(const string reqId, const string symbol, const string timeframe, const MqlRates &rates[], const int offset)
      {
       string items = "";
@@ -229,6 +247,22 @@ public:
    static string PositionTypeToString(const ENUM_POSITION_TYPE t)
      {
       return (t == POSITION_TYPE_SELL) ? "sell" : "buy";
+     }
+
+   //--- Mirrors packages/protocol/src/domain.ts's PendingOrderType union.
+   //--- Only ever called on a type already filtered by
+   //--- CPositionTracker::ScanPendingSymbol to one of these four, but keeps
+   //--- an explicit (rather than silently-wrong) fallback anyway.
+   static string OrderTypeToString(const ENUM_ORDER_TYPE t)
+     {
+      switch(t)
+        {
+         case ORDER_TYPE_BUY_LIMIT:  return "buy_limit";
+         case ORDER_TYPE_SELL_LIMIT: return "sell_limit";
+         case ORDER_TYPE_BUY_STOP:   return "buy_stop";
+         case ORDER_TYPE_SELL_STOP:  return "sell_stop";
+         default:                    return "buy_limit";
+        }
      }
 
    //--- Mirrors ENUM_VALIDATION_CODE in Core/Defines.mqh; keep in sync with

@@ -59,8 +59,13 @@ interface LiveChartProps {
   drawings: Drawing[];
   activeDrawingTool: DrawingTool | null;
   onDrawingCreated: (drawing: Drawing) => void;
+  onDrawingUpdated: (drawing: Drawing) => void;
   onDrawingSelectedChange: (ids: string[]) => void;
   onDeleteSelectedDrawings: () => void;
+  // Settings.lastDrawingColor (or a theme-accent fallback before it's ever
+  // been set) — every newly-placed drawing is stamped with this instead of
+  // always resetting to the theme accent. See lib/drawingTools.ts.
+  defaultDrawingColor: string | undefined;
   // Explicit "Selector" tool — box/marquee multi-select over the chart
   // (separate from the plain single-click select that's always available).
   selectMode: boolean;
@@ -106,8 +111,10 @@ export function LiveChart({
   drawings,
   activeDrawingTool,
   onDrawingCreated,
+  onDrawingUpdated,
   onDrawingSelectedChange,
   onDeleteSelectedDrawings,
+  defaultDrawingColor,
   selectMode,
   magnetEnabled,
   crosshairEnabled,
@@ -129,8 +136,24 @@ export function LiveChart({
   const pnlRef = useRef<PnlOverlayController | null>(null);
   const magnifierRef = useRef<ChartMagnifierController | null>(null);
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
-  const callbacksRef = useRef({ onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onDeleteSelectedDrawings, onRequestOlderBars });
-  callbacksRef.current = { onLineDrag, onLineDragEnd, onDrawingCreated, onDrawingSelectedChange, onDeleteSelectedDrawings, onRequestOlderBars };
+  const callbacksRef = useRef({
+    onLineDrag,
+    onLineDragEnd,
+    onDrawingCreated,
+    onDrawingUpdated,
+    onDrawingSelectedChange,
+    onDeleteSelectedDrawings,
+    onRequestOlderBars,
+  });
+  callbacksRef.current = {
+    onLineDrag,
+    onLineDragEnd,
+    onDrawingCreated,
+    onDrawingUpdated,
+    onDrawingSelectedChange,
+    onDeleteSelectedDrawings,
+    onRequestOlderBars,
+  };
   // Read inside the pan-subscription's handler without re-subscribing on
   // every render — subscribeVisibleLogicalRangeChange is wired once at
   // mount (see below).
@@ -190,6 +213,7 @@ export function LiveChart({
       (d) => callbacksRef.current.onDrawingCreated(d),
       (ids) => callbacksRef.current.onDrawingSelectedChange(ids),
       () => callbacksRef.current.onDeleteSelectedDrawings(),
+      (d) => callbacksRef.current.onDrawingUpdated(d),
     );
 
     const pnl = new PnlOverlayController(chart, series, container);
@@ -351,6 +375,10 @@ export function LiveChart({
   useEffect(() => {
     drawRef.current?.setDrawings(drawings);
   }, [drawings]);
+
+  useEffect(() => {
+    drawRef.current?.setDefaultColor(defaultDrawingColor);
+  }, [defaultDrawingColor]);
 
   useEffect(() => {
     drawRef.current?.setActiveTool(activeDrawingTool);

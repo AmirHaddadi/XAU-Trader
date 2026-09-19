@@ -122,4 +122,21 @@ struct SPositionInfo
    long               magic;
    datetime           timeOpen;
   };
+
+//--- One not-yet-filled pending order (Buy/Sell Limit/Stop) on the current
+//--- symbol, as last scanned from the terminal's own OrdersTotal()/
+//--- OrderGetTicket() list — the separate MT5 API from positions above,
+//--- since a pending order hasn't opened a position yet. Same
+//--- never-cached-across-scans reasoning as SPositionInfo.
+struct SPendingOrderInfo
+  {
+   ulong           ticket;
+   ENUM_ORDER_TYPE type;      // ORDER_TYPE_BUY_LIMIT/SELL_LIMIT/BUY_STOP/SELL_STOP
+   double          volume;
+   double          priceOpen; // the trigger/entry price the order will fill at
+   double          sl;
+   double          tp;
+   long            magic;
+   datetime        timePlaced;
+  };
 //+------------------------------------------------------------------+

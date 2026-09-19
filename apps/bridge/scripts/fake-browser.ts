@@ -49,6 +49,14 @@ ws.on("open", () => {
     ws.send(JSON.stringify({ type: "settings.update", payload: { theme: "light" } }));
   }, 1700);
   setTimeout(() => {
+    console.log("[fake-browser] -> order.send (limit — pendingOrders smoke test)");
+    ws.send(JSON.stringify({ type: "order.send", reqId: "test-3c", payload: { plan: { ...testPlan, placement: "limit", entryPrice: 2390 } } }));
+  }, 1500);
+  setTimeout(() => {
+    console.log("[fake-browser] -> order.cancel (the limit order just placed above, per fake-ea's ticket sequence)");
+    ws.send(JSON.stringify({ type: "order.cancel", reqId: "test-3d", payload: { ticket: 900100 } }));
+  }, 1800);
+  setTimeout(() => {
     console.log("[fake-browser] -> journal.request (after EA backfill should have landed)");
     ws.send(JSON.stringify({ type: "journal.request", reqId: "test-5", payload: {} }));
   }, 3000);

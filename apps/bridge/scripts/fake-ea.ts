@@ -5,7 +5,7 @@
 //
 // Usage: pnpm --filter @xau-trader/bridge exec tsx scripts/fake-ea.ts
 import { connect } from "node:net";
-import type { BridgeToEaMessage, EaToBridgeMessage } from "@xau-trader/protocol";
+import type { BridgeToEaMessage, EaToBridgeMessage, PendingOrderInfo } from "@xau-trader/protocol";
 
 const HOST = "127.0.0.1";
 const PORT = Number(process.env.EA_TCP_PORT ?? 9443);
@@ -15,12 +15,21 @@ const PORT = Number(process.env.EA_TCP_PORT ?? 9443);
 // the happy "more always available" path.
 const FAKE_MAX_HISTORY = 12000;
 
+// Smoke-tests the pendingOrders wire path (protocol -> bridge -> browser)
+// end to end: a limit/stop order.send adds one here and re-pushes, an
+// order.cancel removes it and re-pushes — mirrors CPositionTracker::
+// ScanPendingSymbol's real behavior closely enough to exercise the client's
+// Pending Orders tab without a real MT5 terminal.
+let pendingTicketSeq = 900100;
+const pendingOrders: PendingOrderInfo[] = [];
+
 const socket = connect(PORT, HOST, () => {
   console.log(`[fake-ea] connected to bridge at ${HOST}:${PORT}`);
   send({ type: "hello", payload: { account: 12345678, broker: "Demo Broker", symbol: "XAUUSD", magic: 574839201, eaVersion: "2.0.0-dev" } });
   send({ type: "symbol", payload: { symbol: "XAUUSD", digits: 2, point: 0.01, volumeMin: 0.01, volumeMax: 100, volumeStep: 0.01, tickSize: 0.01, tickValueProfit: 1, tickValueLoss: 1, stopsLevelPoints: 0, freezeLevelPoints: 0, tradeMode: 4, valid: true } });
   send({ type: "account", payload: { balance: 10000, equity: 10023.5, freeMargin: 9800, currency: "USD" } });
   send({ type: "positions", payload: { positions: [] } });
+  send({ type: "pendingOrders", payload: { orders: pendingOrders } });
 
   let price = 2400.0;
   setInterval(() => {
@@ -86,14 +95,45 @@ socket.on("data", (chunk) => {
       send({ type: "risk.result", reqId: msg.reqId, payload: fakeRisk(msg.payload.plan) });
     }
     if (msg.type === "order.send") {
-      const risk = fakeRisk(msg.payload.plan);
+      const { plan } = msg.payload;
+      const risk = fakeRisk(plan);
       if (risk.code !== "ok") {
         send({ type: "order.ack", reqId: msg.reqId, payload: { ok: false, message: risk.code } });
-      } else {
+      } else if (plan.placement === "market") {
         send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "", ticket: 900001 } });
+      } else {
+        const ticket = pendingTicketSeq++;
+        pendingOrders.push({
+          ticket,
+          type: `${plan.direction}_${plan.placement}` as PendingOrderInfo["type"],
+          volume: risk.lots,
+          priceOpen: plan.entryPrice,
+          sl: plan.slPrice,
+          tp: plan.tpPrice,
+          magic: 574839201,
+          timePlaced: Math.floor(Date.now() / 1000),
+        });
+        send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "", ticket } });
+        send({ type: "pendingOrders", payload: { orders: pendingOrders } });
       }
     }
-    if (msg.type === "order.modifyPending" || msg.type === "order.close" || msg.type === "order.cancel" || msg.type === "order.closePartial") {
+    if (msg.type === "order.cancel") {
+      const idx = pendingOrders.findIndex((o) => o.ticket === msg.payload.ticket);
+      if (idx !== -1) pendingOrders.splice(idx, 1);
+      send({ type: "order.ack", reqId: msg.reqId, payload: { ok: idx !== -1, message: idx !== -1 ? "" : "not_found" } });
+      send({ type: "pendingOrders", payload: { orders: pendingOrders } });
+    }
+    if (msg.type === "order.modifyPending") {
+      const order = pendingOrders.find((o) => o.ticket === msg.payload.ticket);
+      if (order) {
+        order.priceOpen = msg.payload.price;
+        order.sl = msg.payload.sl;
+        order.tp = msg.payload.tp;
+      }
+      send({ type: "order.ack", reqId: msg.reqId, payload: { ok: order !== undefined, message: order ? "" : "not_found" } });
+      if (order) send({ type: "pendingOrders", payload: { orders: pendingOrders } });
+    }
+    if (msg.type === "order.close" || msg.type === "order.closePartial") {
       send({ type: "order.ack", reqId: msg.reqId, payload: { ok: true, message: "" } });
     }
     if (msg.type === "order.modifyPosition") {

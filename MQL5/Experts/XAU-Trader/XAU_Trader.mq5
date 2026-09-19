@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, Amirreza Haddadi"
 #property link      "https://github.com/AmirHaddadi/XAU-Trader"
-#property version   "1.3"
+#property version   "1.4"
 #property description "Position sizing & money-management engine for XAUUSD. Drives the local XAU-Trader web platform (bridge + browser dashboard) by default; the legacy on-chart panel can be re-enabled via XAUT_LEGACY_PANEL below for rollback."
 #property strict
 // Same source icon as the web dashboard's favicon (apps/web/public/
@@ -40,7 +40,7 @@
 #include <XAUTrader/Config/SettingsStore.mqh>
 #endif
 
-#define XAUT_EA_VERSION "1.3.0" // kept in sync with #property version above; reported in the bridge "hello" handshake
+#define XAUT_EA_VERSION "1.4.0" // kept in sync with #property version above; reported in the bridge "hello" handshake
 
 input ulong   InpMagicNumber       = 574839201;  // Magic number for orders placed by this panel
 input int     InpDeviationPoints   = 20;         // Max price deviation (points) for market orders
@@ -102,6 +102,7 @@ STradePlan      g_lastPlan;
 SRiskResult     g_lastResult;
 SSymbolSnapshot g_lastSym;
 SPositionInfo   g_lastPositions[];
+SPendingOrderInfo g_lastPendingOrders[];
 
 #define XAUT_DATA_UPDATE_MIN_MS 150
 ulong g_lastDataUpdateMs = 0;
@@ -391,6 +392,14 @@ void ScanPositionsDataThrottled()
 void ScanPositionsData()
   {
    CPositionTracker::ScanSymbol(g_activeSymbol, g_lastPositions);
+   // Same scan cadence as open positions — both are "what's outstanding for
+   // this account/symbol right now", and the web UI's Pending Orders tab
+   // needs refreshing on exactly the same triggers (position close/open,
+   // the 1000ms throttle, the instant-feedback path below) as the Open
+   // Positions tab already does. No legacy-panel equivalent exists (the
+   // native panel never had a pending-orders list) so no XAUT_LEGACY_PANEL
+   // branch here.
+   CPositionTracker::ScanPendingSymbol(g_activeSymbol, g_lastPendingOrders);
 #ifdef XAUT_LEGACY_PANEL
    g_panel.SetPositions(g_lastPositions);
 #endif
@@ -407,10 +416,14 @@ void ScanAndRenderPositions()
    ScanPositionsData();
    RenderAll();
    // Instant feedback for the web mirror too — same reasoning as the native
-   // repaint above: don't make a just-placed/closed trade wait out the
-   // regular 1000ms bridge push throttle.
+   // repaint above: don't make a just-placed/closed trade (or a just-sent/
+   // cancelled pending order) wait out the regular 1000ms bridge push
+   // throttle.
    if(g_bridge.IsConnected())
+     {
       g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
+      g_bridge.SendLine(CProtocol::BuildPendingOrders(g_lastPendingOrders));
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -618,6 +631,7 @@ void PushBridgeStateThrottled()
    g_bridge.SendLine(CProtocol::BuildAccount(balance, equity, freeMargin, g_currency));
 
    g_bridge.SendLine(CProtocol::BuildPositions(g_lastPositions));
+   g_bridge.SendLine(CProtocol::BuildPendingOrders(g_lastPendingOrders));
 
    g_bridgeHandlers.PushNewDeals(g_bridge, g_activeSymbol);
   }

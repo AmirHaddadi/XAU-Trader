@@ -8,6 +8,7 @@ import type {
   BrowserToBridgeMessage,
   ClosedDeal,
   JournalComment,
+  PendingOrderInfo,
   PositionInfo,
   RiskResult,
   Settings,
@@ -44,6 +45,11 @@ export interface BridgeState {
   account: AccountSnapshot | undefined;
   symbol: SymbolMeta | undefined;
   positions: PositionInfo[];
+  // Not-yet-filled Buy/Sell Limit/Stop orders — pushed on the same
+  // cadence/triggers as `positions` (see ScanPositionsData in the EA), kept
+  // as a separate array/tab rather than merged in since a pending order
+  // has no open-position fields (no profit, no priceOpen yet realized).
+  pendingOrders: PendingOrderInfo[];
   bars: Bar[];
   barsTimeframe: string | undefined;
   // Separate from `bars` deliberately: `bars` only changes on a genuine
@@ -91,6 +97,7 @@ const initialState: BridgeState = {
   account: undefined,
   symbol: undefined,
   positions: [],
+  pendingOrders: [],
   bars: [],
   barsTimeframe: undefined,
   liveBar: undefined,
@@ -241,6 +248,9 @@ export function useBridgeSocket() {
           return;
         case "positions":
           setState((s) => ({ ...s, positions: msg.payload.positions }));
+          return;
+        case "pendingOrders":
+          setState((s) => ({ ...s, pendingOrders: msg.payload.orders }));
           return;
         case "bars.data":
           setState((s) => {
